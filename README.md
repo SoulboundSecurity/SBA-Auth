@@ -6,7 +6,7 @@ A Web3 authentication system that avoids server-side storage of Ethereum address
 
 ## Overview
 
-Traditional Web3 authentication often requires storing wallet addresses in databases, creating privacy concerns and potential liability. This implementation explores an alternative approach using Soulbound Tokens to maintain persistent identity without address storage.
+Traditional Web3 authentication often requires storing wallet addresses in databases, creating privacy concerns and potential liability. This implementation explores an alternative approach using Soulbound Tokens to maintain persistent identity without address storage. This is an AI Psudo-code generated psudo-code example implementation, not representative of the Soulbound Finance implementation. 
 
 ## Technical Approach
 
@@ -20,7 +20,7 @@ Instead of storing Ethereum addresses, the system:
 
 ### Account ID Generation
 
-The Account ID uses multi-layer hashing to prevent reverse engineering:
+The Account ID uses multi-layer hashing as a stub out and example of use for ZKP KYC, account IDs, and other data as may be needed:
 
 ```solidity
 function _generateAccountId(address owner, uint256 tokenId) 
@@ -256,7 +256,7 @@ Potential enhancements to explore:
 
 ## Contributing
 
-This is an experimental implementation. Issues and pull requests are welcome for improving the approach.
+This is an AI Psudo-code generated experimental implementation, not representative of the Soulbound Finance implementation. Issues and pull requests are welcome for improving the approach.
 
 ## License
 
@@ -272,4 +272,4 @@ This implementation builds upon concepts from:
 
 ## Disclaimer
 
-This is an experimental authentication system. It has not been audited and should be thoroughly reviewed before any production use. The approach trades some convenience (no account recovery) for privacy benefits.
+This is an experimental authentication system. This is an AI Psudo-code generated experimental implementation, not representative of the Soulbound Finance implementation. It has not been audited and should be thoroughly reviewed before any use. The approach trades some convenience (no account recovery) for privacy benefits.
