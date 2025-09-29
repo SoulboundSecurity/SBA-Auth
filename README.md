@@ -6,7 +6,7 @@ A Web3 authentication system that avoids server-side storage of Ethereum address
 
 ## Overview
 
-Traditional Web3 authentication often requires storing wallet addresses in databases, creating privacy concerns and potential liability. This implementation explores an alternative approach using Soulbound Tokens to maintain persistent identity without address storage. This is an AI Psudo-code generated psudo-code example implementation, not representative of the Soulbound Finance implementation. 
+Traditional Web3 authentication often requires storing wallet addresses in databases, creating privacy concerns and potential liability. This implementation explores an alternative approach using Soulbound Tokens to maintain persistent identity without address storage. This is a simple AI generated pseudocode example implementation, not representative of the Soulbound Finance implementation. 
 
 ## Technical Approach
 
@@ -272,4 +272,4 @@ This implementation builds upon concepts from:
 
 ## Disclaimer
 
-This is an experimental authentication system. This is an AI Psudo-code generated experimental implementation, not representative of the Soulbound Finance implementation. It has not been audited and should be thoroughly reviewed before any use. The approach trades some convenience (no account recovery) for privacy benefits.
+This is an experimental authentication system. This is an AI pseudocode generated experimental implementation, not representative of the Soulbound Finance implementation. It has not been audited and should be thoroughly reviewed before any use. The approach trades some convenience (no account recovery) for privacy benefits.
