@@ -12,38 +12,6 @@ infrastructure fleet administration.
 In production gating the operator control surface of
 [Soulbound Finance](https://soulbound.finance) since April 2026.
 
-## What deploying this feels like
-
-Setup is a ceremony, and then daily life gets simpler than what you had.
-On day one, each operator takes a dedicated hardware wallet, pays a few
-cents of gas, and enrolls — that one transaction is where you bolt on
-whatever vetting your organization requires, and it's carved into a
-public ledger forever. After that, there are no passwords to rotate,
-nothing to reset, no codes to read off a phone, and nothing on your
-servers worth stealing: an operator taps their wallet once to open an
-hour of dashboards, and physically confirms each dangerous action on the
-device's screen, which shows exactly what will execute. Offboarding
-someone is editing one config line. Your database can be dumped, your
-backend rooted, your RPC provider can lie — none of it mints a login,
-because nothing you store can sign.
-
-**The limits, left and right.** On the left, the floor is your signer
-hardware and the humans holding it — the design deliberately concentrates
-every secret into those keys, so sloppy key custody, a phished operator
-who confirms something they shouldn't, or a lost wallet with no
-re-enrollment plan is entirely your problem, and no amount of
-configuration here saves you. On the right, the ceiling is scale and
-convenience: this is for the five-to-twenty people who can touch money,
-not your workforce (no SSO, no roles, no recovery flow — a lost key means
-a fresh public enrollment, by design); your chain or RPC being
-unreachable locks the console shut rather than open, because fail-closed
-is the contract; and every mutation costs a physical button press, which
-your operators will call friction in week one and call the audit trail by
-month three. Fly between those limits — tiny vetted population, real key
-custody, reachable chain — and the system is close to unattackable from
-the server side. Drift past either edge and you're flying a different
-aircraft than the one that was certified.
-
 ## How it works
 
 SBA-Auth is an **enrollment / authentication split** — WebAuthn's
@@ -103,6 +71,37 @@ const config = {
 app.get('/admin/stats',  rateLimiter, sbaSessionAuth(config), handler);
 app.post('/admin/action', rateLimiter, sbaRequestAuth(config), handler);
 ```
+## What deploying this feels like
+
+Setup is a ceremony, and then daily life gets simpler than what you had.
+On day one, each operator takes a dedicated hardware wallet, pays a few
+cents of gas, and enrolls — that one transaction is where you bolt on
+whatever vetting your organization requires, and it's carved into a
+public ledger forever. After that, there are no passwords to rotate,
+nothing to reset, no codes to read off a phone, and nothing on your
+servers worth stealing: an operator taps their wallet once to open an
+hour of dashboards, and physically confirms each dangerous action on the
+device's screen, which shows exactly what will execute. Offboarding
+someone is editing one config line. Your database can be dumped, your
+backend rooted, your RPC provider can lie — none of it mints a login,
+because nothing you store can sign.
+
+**The limits, left and right.** On the left, the floor is your signer
+hardware and the humans holding it — the design deliberately concentrates
+every secret into those keys, so sloppy key custody, a phished operator
+who confirms something they shouldn't, or a lost wallet with no
+re-enrollment plan is entirely your problem, and no amount of
+configuration here saves you. On the right, the ceiling is scale and
+convenience: this is for the five-to-twenty people who can touch money,
+not your workforce (no SSO, no roles, no recovery flow — a lost key means
+a fresh public enrollment, by design); your chain or RPC being
+unreachable locks the console shut rather than open, because fail-closed
+is the contract; and every mutation costs a physical button press, which
+your operators will call friction in week one and call the audit trail by
+month three. Fly between those limits — tiny vetted population, real key
+custody, reachable chain — and the system is close to unattackable from
+the server side. Drift past either edge and you're flying a different
+aircraft than the one that was certified.
 
 ## Repository layout
 
