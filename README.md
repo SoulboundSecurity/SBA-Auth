@@ -71,46 +71,39 @@ const config = {
 app.get('/admin/stats',  rateLimiter, sbaSessionAuth(config), handler);
 app.post('/admin/action', rateLimiter, sbaRequestAuth(config), handler);
 ```
-## What deploying this feels like
+## Deployment model
 
-Setup is a ceremony, and then daily life gets simpler than what you had.
-On day one, each operator takes a dedicated hardware wallet, pays a few
-cents of gas, and enrolls — that one transaction is where you bolt on
-whatever vetting your organization requires, and it's carved into a
-public ledger forever. 
+Enrollment is identity proofing and credential registration in one
+on-chain step: each operator enrolls from a dedicated hardware signer
+with a gas-paying transaction, gated by whatever vetting the
+organization requires. The enrollment log is an immutable,
+independently auditable roster.
 
-After that, there are no passwords to rotate,
-nothing to reset, no codes to read off a phone, and nothing on your
-servers worth stealing: an operator taps their wallet once to open an
-hour of dashboards, and physically confirms each dangerous action on the
-device's screen, which shows exactly what will execute. 
+Day-to-day operation maps to familiar enterprise controls, minus the
+credential store. Session establishment is one wallet signature with a
+bounded TTL, instantly revocable. Privileged mutations are step-up
+authorization: one hardware-confirmed signature per action, displaying
+exactly what executes. There is no password lifecycle, no MFA reset
+desk, and no server-side credential to steal or rotate. Deprovisioning
+is a one-line allowlist change; database, backend, or RPC compromise
+mints no access, because nothing the server stores can sign.
 
-Offboarding
-someone is editing one config line. Your database can be dumped, your
-backend rooted, your RPC provider can lie — none of it mints a login,
-because nothing you store can sign.
+## Operating envelope
 
-**The limits, left and right.** 
-On the left, the floor is your signer
-hardware and the humans holding it — the design deliberately concentrates
-every secret into those keys, so sloppy key custody, a phished operator
-who confirms something they shouldn't, or a lost wallet with no
-re-enrollment plan is entirely your problem, and no amount of
-configuration here saves you. 
+- **Floor: signer custody.** All secrecy concentrates in the operator
+  keys. Key custody, operator phishing discipline, and a
+  re-enrollment plan for lost keys are deployment responsibilities; no
+  configuration compensates for them.
+- **Ceiling: population and availability.** Built for the small
+  privileged population that touches funds or production, not
+  workforce SSO: no roles, no recovery flow (a lost key is a new,
+  publicly visible enrollment, by design). Identity checks fail
+  closed: an unreachable chain or RPC locks the control surface shut.
+  Per-action confirmation is deliberate friction, and it doubles as an
+  attributable audit trail.
 
-On the right, the ceiling is scale and
-convenience: this is for the five-to-twenty people who can touch money,
-not your workforce (no SSO, no roles, no recovery flow — a lost key means
-a fresh public enrollment, by design); your chain or RPC being
-unreachable locks the console shut rather than open, because fail-closed
-is the contract; and every mutation costs a physical button press, which
-your operators will call friction in week one and call the audit trail by
-month three. 
-
-Fly between those limits — tiny vetted population, real key
-custody, reachable chain — and the system is close to unattackable from
-the server side. Drift past either edge and you're flying a different
-aircraft than the one that was certified.
+Inside that envelope — small vetted population, real key custody,
+reachable chain — the server side offers no credential to attack.
 
 ## Repository layout
 
