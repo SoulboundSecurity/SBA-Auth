@@ -1,5 +1,13 @@
 # Security Policy
 
+## Review history
+
+Findings from reviews of this repository, and the changes shipped in
+response, are recorded in [`audits/`](audits/). The v1.0 implementation
+carries a pre-publication internal adversarial review
+([2026-10-11](audits/2026-10-11-internal-adversarial-review.md)); external
+audits are welcome and will be recorded in the same log.
+
 ## Reporting
 
 Report vulnerabilities to **security@soulboundsecurity.io**. Accepted

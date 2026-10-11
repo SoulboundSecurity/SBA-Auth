@@ -223,8 +223,10 @@ function makeAllowCheck(allowlist: SbaConfig['allowlist']): (id: string) => bool
 }
 
 /** Insertion-ordered nonce cache with TTL; oldest entries evicted at
- *  capacity. Single-process semantics: multi-replica deployments back this
- *  with a shared store or route request-mode traffic to one replica. */
+ *  capacity. Entries are inserted only for fully verified requests, so the
+ *  cache is bounded by authenticated traffic. Single-process semantics:
+ *  multi-replica deployments back this with a shared store or route
+ *  request-mode traffic to one replica. */
 class NonceCache {
   private entries = new Map<string, number>();
   constructor(private max: number) {}
@@ -424,9 +426,6 @@ export function sbaRequestAuth(config: SbaConfig): RequestHandler {
       if (issuedAtMs > now + 60_000) return deny(res);
       if (now - issuedAtMs > maxAgeMs) return deny(res);
 
-      // Single-use: a captured request signature cannot be replayed.
-      if (!nonces.consume(payload.nonce, maxAgeMs + 60_000)) return deny(res);
-
       let recovered: Address;
       try {
         recovered = await recoverTypedDataAddress({
@@ -442,6 +441,15 @@ export function sbaRequestAuth(config: SbaConfig): RequestHandler {
 
       const identityId = await verifyIdentity(config, recovered, allowCheck);
       if (identityId === null) return deny(res);
+
+      // Single-use, consumed only AFTER full verification: insertions are
+      // unforgeable (valid signature from an enrolled, allowlisted identity
+      // required), so the cache is bounded by authenticated traffic and
+      // cannot be flooded to evict a live nonce; and a transient
+      // verification failure never burns a valid signature. Of two
+      // concurrent replays passing verification, exactly one wins: consume
+      // is a synchronous map operation.
+      if (!nonces.consume(payload.nonce, maxAgeMs + 60_000)) return deny(res);
 
       req.sbaAuth = {
         address: recovered,
