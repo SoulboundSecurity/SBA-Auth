@@ -1,275 +1,150 @@
-# Soulbound Auth (SBA)
+# SBA-Auth · Soulbound Auth
 
-[![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](https://choosealicense.com/licenses/mit/)
+**Wallet-native authentication with no stored credentials.** The
+credential classes behind most account takeovers — passwords, email
+resets, phone numbers, SIM swaps, TOTP seeds, recoverable sessions — do
+not exist in this pattern. The only secret is the signer's wallet key;
+the server holds authorization data that cannot sign. Built for the
+surfaces where populations are small and stakes are high: exchange
+hot-wallet consoles, protocol operator panels, custodian approvals,
+infrastructure fleet administration.
 
-A Web3 authentication system that avoids server-side storage of Ethereum addresses by using non-transferable Soulbound Tokens (SBTs) and hashed account identifiers.
+In production gating the operator control surface of
+[Soulbound Finance](https://soulbound.finance) since April 2026.
 
-## Overview
+## What deploying this feels like
 
-Traditional Web3 authentication often requires storing wallet addresses in databases, creating privacy concerns and potential liability. This implementation explores an alternative approach using Soulbound Tokens to maintain persistent identity without address storage. This is a simple AI generated pseudocode example implementation, not representative of the Soulbound Finance implementation. 
+Setup is a ceremony, and then daily life gets simpler than what you had.
+On day one, each operator takes a dedicated hardware wallet, pays a few
+cents of gas, and enrolls — that one transaction is where you bolt on
+whatever vetting your organization requires, and it's carved into a
+public ledger forever. After that, there are no passwords to rotate,
+nothing to reset, no codes to read off a phone, and nothing on your
+servers worth stealing: an operator taps their wallet once to open an
+hour of dashboards, and physically confirms each dangerous action on the
+device's screen, which shows exactly what will execute. Offboarding
+someone is editing one config line. Your database can be dumped, your
+backend rooted, your RPC provider can lie — none of it mints a login,
+because nothing you store can sign.
 
-## Technical Approach
+**The limits, left and right.** On the left, the floor is your signer
+hardware and the humans holding it — the design deliberately concentrates
+every secret into those keys, so sloppy key custody, a phished operator
+who confirms something they shouldn't, or a lost wallet with no
+re-enrollment plan is entirely your problem, and no amount of
+configuration here saves you. On the right, the ceiling is scale and
+convenience: this is for the five-to-twenty people who can touch money,
+not your workforce (no SSO, no roles, no recovery flow — a lost key means
+a fresh public enrollment, by design); your chain or RPC being
+unreachable locks the console shut rather than open, because fail-closed
+is the contract; and every mutation costs a physical button press, which
+your operators will call friction in week one and call the audit trail by
+month three. Fly between those limits — tiny vetted population, real key
+custody, reachable chain — and the system is close to unattackable from
+the server side. Drift past either edge and you're flying a different
+aircraft than the one that was certified.
 
-### Core Concept
+## How it works
 
-Instead of storing Ethereum addresses, the system:
-1. Validates ownership through ephemeral signatures
-2. Issues non-transferable SBTs as identity markers
-3. Generates hashed Account IDs that cannot be reversed to addresses
-4. Stores only these Account IDs in the database
+SBA-Auth is an **enrollment / authentication split** — WebAuthn's
+registration/authentication model with the authenticator registry on a
+public chain and the registration policy in a smart contract:
 
-### Account ID Generation
+- **Enroll once, on-chain.** A candidate key pays gas to mint a
+  non-transferable identity whose value derives from the key's own
+  address. Enrollment policy is the organization's extension point: open,
+  or co-signed by an enrollment authority (KYC, HR onboarding, dual
+  approval — all pushed into one ceremony). The enrollment log is a
+  public, append-only roster: authority can never quietly move to a new
+  key.
+- **Authenticate per request, statelessly.** Every request recovers a
+  signer from an EIP-712 signature (domain-bound to one deployment),
+  checks live chain state that the signer holds an enrolled identity,
+  checks *locally* that the identity derives from the signer's own
+  address, and checks a deployment allowlist. Fail-closed throughout.
+- **Two modes.** Session mode: one signature per bounded window,
+  instantly revocable. Request mode: one signature per action, bound to
+  method + path + body hash, single-use — every dangerous action becomes
+  a human-readable hardware-wallet confirmation.
 
-The Account ID uses multi-layer hashing as a stub out and example of use for ZKP KYC, account IDs, and other data as may be needed:
+Database compromise yields nothing. Server compromise yields nothing an
+attacker can present. RPC compromise alone yields nothing. Access reduces
+to possession of an enrolled, allowlisted hardware key.
 
-```solidity
-function _generateAccountId(address owner, uint256 tokenId) 
-    private pure returns (bytes32) 
-{
-    bytes32 layer1 = keccak256(abi.encodePacked(owner, tokenId));
-    bytes32 layer2 = keccak256(abi.encodePacked(layer1, "SBA_PRIVACY_SALT_V1"));
-    
-    return keccak256(abi.encodePacked(
-        uint128(uint256(layer2)),
-        uint128(uint256(layer1)),
-        "SOULBOUND_AUTH"
-    ));
-}
+Full pattern: [SPEC.md](SPEC.md). Deployment scenarios and configuration
+guidance: [USE_CASES.md](USE_CASES.md).
+
+## Quickstart
+
+```bash
+npm install
+forge build
+anvil &          # local chain
+npm run demo     # deploy, enroll, authenticate, full rejection matrix
 ```
 
-## Architecture
+The demo exercises the whole pattern end to end: session-gated reads,
+request-gated mutations, replay rejection, body-tamper rejection,
+unenrolled-key rejection, and instant session revocation.
 
-```
-┌─────────────────────────────────────────────────────┐
-│                   Web3 Client                        │
-│  - Wallet connection and signature generation        │
-│  - SBT contract interaction                         │
-│  - JWT token management                             │
-└──────────────────┬──────────────────────────────────┘
-                   │
-┌──────────────────▼──────────────────────────────────┐
-│                  Backend Server                      │
-│  - Signature verification                            │
-│  - JWT issuance and validation                      │
-│  - Account ID database (no addresses)               │
-│  - Role-based access control                        │
-└──────────────────┬──────────────────────────────────┘
-                   │
-┌──────────────────▼──────────────────────────────────┐
-│              SBT Smart Contract                      │
-│  - Non-transferable token minting                    │
-│  - Account ID generation                            │
-│  - EULA/Terms hash storage                          │
-└──────────────────────────────────────────────────────┘
-```
+Server integration is one middleware per surface:
 
-## Authentication Flow
+```ts
+import { sbaSessionAuth, sbaRequestAuth, makeViemPredicate, deriveIdentityLocal } from './server/sba-auth.js';
 
-### Initial Connection (New User)
-
-1. User connects wallet and signs authentication message
-2. Server validates signature without storing address
-3. Server checks blockchain for existing SBT
-4. Returns JWT with `hasSBT: false`
-
-### SBT Minting (Account Creation)
-
-1. User accepts EULA/Terms
-2. User mints SBT through smart contract
-3. Contract generates unique Account ID
-4. Server stores Account ID (not address) in database
-5. Returns JWT with `hasSBT: true, accountId: <hash>`
-
-### Subsequent Authentication
-
-1. User signs new authentication message
-2. Server validates signature
-3. Server retrieves Account ID from blockchain
-4. Returns JWT with Account ID for session management
-
-## Implementation Details
-
-### Smart Contract
-
-The Soulbound Token contract implements:
-- Non-transferable ERC721-like tokens
-- Deterministic Account ID generation
-- One token per address restriction
-- EULA acceptance tracking
-
-Key functions:
-```solidity
-mintSBT(bytes32 eulaHash, uint8 version) returns (uint256 tokenId, bytes32 accountId)
-getAccountInfo(address owner) returns (bool hasToken, bytes32 accountId, uint256 tokenId)
-```
-
-### Server Component
-
-The Node.js server provides:
-- Signature verification endpoint
-- JWT token generation and refresh
-- Account ID based session management
-- RBAC implementation using Account IDs
-
-Example endpoints:
-```
-POST /auth          - Authenticate with signature
-POST /confirm-mint  - Confirm SBT minting
-POST /refresh       - Refresh JWT token
-GET  /account       - Get account information
-```
-
-### Client SDK
-
-JavaScript client library handles:
-- Wallet connection
-- Signature generation
-- SBT minting transactions
-- JWT token management
-
-Basic usage:
-```javascript
-const sba = new SoulboundAuthClient({
-  contractAddress: '0x...',
-  serverUrl: 'https://api.example.com'
-});
-
-const auth = await sba.connect();
-if (!auth.hasSBT) {
-  await sba.mintSBT(eulaHash, version);
-}
-```
-
-## Privacy Considerations
-
-### What Gets Stored
-
-- Hashed Account IDs (32 bytes)
-- EULA acceptance records
-- Role assignments
-- Application metadata
-
-### What Doesn't Get Stored
-
-- Ethereum addresses
-- Transaction histories
-- Wallet balances
-- Any reversible identifier
-
-### Limitations
-
-- Account IDs are deterministic but non-reversible
-- No account recovery if wallet is lost
-- One SBT per address by design
-- Gas costs for initial SBT minting
-
-## Security Notes
-
-1. **Signature Validation**: All signatures must be verified server-side
-2. **Replay Protection**: Include timestamps in signed messages
-3. **Rate Limiting**: Implement on authentication endpoints
-4. **JWT Security**: Use strong secrets and appropriate expiration times
-
-## RBAC Implementation
-
-Roles are assigned to Account IDs rather than addresses:
-
-```javascript
-const roles = {
-  admins: ['0xabc...'],     // Account IDs
-  moderators: ['0x123...']
+const config = {
+  chainId,
+  verifyingContract: REGISTRY_ADDRESS,          // binds every signature to this deployment
+  predicate: makeViemPredicate(publicClient, REGISTRY_ADDRESS),
+  deriveIdentity: (a) => deriveIdentityLocal(a, 'YOUR_FORK_SALT', chainId),
+  allowlist: ADMIN_IDENTITY_IDS,                // authorization data, not a secret
 };
 
-function requireRole(role) {
-  return (req, res, next) => {
-    const accountId = req.user.accountId;
-    if (roles[role].includes(accountId)) {
-      next();
-    } else {
-      res.status(403).json({ error: 'Insufficient permissions' });
-    }
-  };
-}
+app.get('/admin/stats',  rateLimiter, sbaSessionAuth(config), handler);
+app.post('/admin/action', rateLimiter, sbaRequestAuth(config), handler);
 ```
 
-## Database Schema
+## Repository layout
 
-```sql
-CREATE TABLE accounts (
-    account_id TEXT PRIMARY KEY,
-    created_at INTEGER NOT NULL,
-    eula_hash TEXT NOT NULL,
-    eula_version INTEGER NOT NULL,
-    metadata TEXT
-);
+| Path | What | License |
+| --- | --- | --- |
+| `SPEC.md`, `USE_CASES.md` | The pattern and its deployments | AGPL-3.0 (freely readable; ideas aren't licensed) |
+| `contracts/SoulboundAuthToken.sol` | Enrollment registry (open or approval-gated) | AGPL-3.0 |
+| `contracts/interfaces/ISBAIdentity.sol` | Minimal identity predicate surface | **MIT** — integrate against it without license questions |
+| `server/sba-auth.ts`, `client/sba-client.ts` | Verifier middleware and envelope signing | AGPL-3.0 |
+| `example/` | Runnable end-to-end demo against anvil | AGPL-3.0 |
 
-CREATE TABLE sessions (
-    session_id TEXT PRIMARY KEY,
-    account_id TEXT,
-    expires_at INTEGER,
-    created_at INTEGER
-);
+## Licensing
 
-CREATE TABLE access_control (
-    account_id TEXT PRIMARY KEY,
-    role TEXT DEFAULT 'user',
-    permissions TEXT
-);
-```
+SBA-Auth follows the Soulbound Security licensing model:
 
-## Development Setup
+- **Concepts stay free.** The original MIT concept exploration remains
+  available, unchanged, at the [`v0-concept`](../../tree/v0-concept) tag.
+- **Interfaces stay permissive.** `ISBAIdentity` is MIT so any system can
+  expose or consume the predicate surface freely.
+- **The implementation is AGPL-3.0.** Deploy it openly and share your
+  modifications, or license it commercially for proprietary embedding:
+  **legal@soulboundsecurity.io**. Commercial engagements include
+  deployment support — enrollment ceremony design, signer custody, and
+  allowlist operations are where the real work lives.
 
-1. Deploy the SBT contract:
-```bash
-npx hardhat run scripts/deploy.js --network localhost
-```
+Contributions are accepted under [CLA.md](CLA.md).
 
-2. Configure environment variables:
-```bash
-SBT_CONTRACT_ADDRESS=0x...
-RPC_URL=http://localhost:8545
-JWT_SECRET=your-secret-key
-```
+## Name use
 
-3. Start the server:
-```bash
-node server/index.js
-```
+The code is AGPL; the name is not. Forks and derived deployments may not
+call themselves "Soulbound Auth" or "SBA-Auth" or imply Soulbound
+Security's endorsement. Describe compatibility nominatively ("implements
+the SBA-Auth pattern") and name your deployment yourself.
 
-## Testing Considerations
+## Related
 
-- Test signature validation thoroughly
-- Verify Account ID generation consistency
-- Ensure SBTs are truly non-transferable
-- Validate JWT expiration and refresh logic
-- Test RBAC with various role configurations
+- [sbf-protocol](https://github.com/SoulboundSecurity/sbf-protocol) — the
+  AGPL-3.0 SoulBound Protocol; its
+  [Role and Trust Model](https://github.com/SoulboundSecurity/sbf-protocol/blob/master/docs/PROTOCOL_SPEC.md#7-role-and-trust-model)
+  is the role-administration pattern these contracts follow, and its
+  identity layer is the production-grade ancestor of this registry.
+- Research: [blog.soulbound.finance](https://blog.soulbound.finance)
 
-## Future Improvements
-
-Potential enhancements to explore:
-
-- Zero-knowledge proof integration for additional privacy
-- Cross-chain SBT verification
-- Account recovery mechanisms using social recovery
-- Batch signature verification for performance
-- Decentralized session management
-
-## Contributing
-
-This is an AI Psudo-code generated experimental implementation, not representative of the Soulbound Finance implementation. Issues and pull requests are welcome for improving the approach.
-
-## License
-
-MIT License - See LICENSE file for details.
-
-## Acknowledgments
-
-This implementation builds upon concepts from:
-- ERC-721 token standard
-- Soulbound token proposals (EIP-5192)
-- JWT authentication patterns
-- Privacy-preserving authentication research
-
-## Disclaimer
-
-This is an experimental authentication system. This is an AI pseudocode generated experimental implementation, not representative of the Soulbound Finance implementation. It has not been audited and should be thoroughly reviewed before any use. The approach trades some convenience (no account recovery) for privacy benefits.
+**Security contact:** security@soulboundsecurity.io ·
+[SECURITY.md](SECURITY.md)
