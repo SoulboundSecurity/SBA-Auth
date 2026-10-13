@@ -57,7 +57,10 @@ Run in full on every request; every failure returns an identical 403.
    **`verifyingContract` is mandatory**: a signature is bound to one
    deployment and cannot be obtained for one system and spent on another.
 5. Live identity lookup through the deployment's predicate, raced against
-   a timeout and **fail-closed**: no answer is a denial.
+   a timeout and **fail-closed**: no answer is a denial, and so is a
+   malformed or zero identity value — zero means absence, and absence
+   never reaches the allowlist, regardless of what a non-conforming
+   registry returns.
 6. Local derivation check: the returned identity value must equal the
    value derived from the signer's own address. A lying registry or RPC
    cannot vouch for a foreign identity, and possession of someone else's

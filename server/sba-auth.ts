@@ -215,10 +215,41 @@ function parseEnvelope(headerValue: string): { payload: Record<string, unknown>;
   }
 }
 
+const ZERO_IDENTITY = /^0x0{64}$/;
+const WELL_FORMED_IDENTITY = /^0x[0-9a-fA-F]{64}$/;
+
+/** Loud-at-construction config validation. An absent or zero domain
+ *  binding, a nonsense chain id, or a zero allowlist entry would silently
+ *  configure a weaker gate; defaults must fail at construction, never be
+ *  interpreted at the gate. (See the zero-semantics entry in audits/.) */
+function assertConfig(config: SbaConfig): void {
+  if (
+    typeof config.verifyingContract !== 'string' ||
+    !/^0x[0-9a-fA-F]{40}$/.test(config.verifyingContract) ||
+    /^0x0{40}$/.test(config.verifyingContract)
+  ) {
+    throw new Error('sba-auth: verifyingContract must be a non-zero address (domain binding is mandatory)');
+  }
+  if (!Number.isInteger(config.chainId) || config.chainId <= 0) {
+    throw new Error('sba-auth: chainId must be a positive integer');
+  }
+  if (typeof config.predicate !== 'function') {
+    throw new Error('sba-auth: predicate is required');
+  }
+}
+
 function makeAllowCheck(allowlist: SbaConfig['allowlist']): (id: string) => boolean {
   if (typeof allowlist === 'function') return allowlist;
   const set = new Set<string>();
-  for (const id of allowlist) set.add(id.toLowerCase());
+  for (const id of allowlist) {
+    const value = id.toLowerCase();
+    if (ZERO_IDENTITY.test(value)) {
+      // Zero is what a sloppy registry returns for "absent"; authorizing
+      // it would let absence through the gate. Refuse loudly.
+      throw new Error('sba-auth: zero identity in allowlist (absence can never be authorized)');
+    }
+    set.add(value);
+  }
   return (id: string) => set.has(id.toLowerCase());
 }
 
@@ -263,6 +294,18 @@ async function verifyIdentity(
   const identity = await withTimeout(config.predicate(address), timeoutMs);
   if (identity === null) return null;
 
+  // A zero or malformed identity never reaches the allowlist,
+  // unconditionally. The reference registry reverts for absent identities,
+  // but the predicate is pluggable: a registry that returns bytes32(0) for
+  // "not enrolled" instead of reverting would otherwise flow its storage
+  // default toward a trust decision. Zero means absence; absence never
+  // passes a trust gate.
+  if (
+    typeof identity.identityId !== 'string' ||
+    !WELL_FORMED_IDENTITY.test(identity.identityId) ||
+    ZERO_IDENTITY.test(identity.identityId)
+  ) return null;
+
   if (config.deriveIdentity) {
     const expected = config.deriveIdentity(address).toLowerCase();
     if (identity.identityId.toLowerCase() !== expected) return null;
@@ -294,6 +337,7 @@ async function verifyIdentity(
  * handler.
  */
 export function sbaSessionAuth(config: SbaConfig): SessionAuthHandler {
+  assertConfig(config);
   const domain = {
     name: config.domainName ?? SBA_DEFAULTS.domainName,
     version: config.domainVersion ?? SBA_DEFAULTS.domainVersion,
@@ -383,6 +427,7 @@ export function sbaSessionAuth(config: SbaConfig): SessionAuthHandler {
  * handler.
  */
 export function sbaRequestAuth(config: SbaConfig): RequestHandler {
+  assertConfig(config);
   const domain = {
     name: config.domainName ?? SBA_DEFAULTS.domainName,
     version: config.domainVersion ?? SBA_DEFAULTS.domainVersion,

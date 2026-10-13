@@ -5,7 +5,9 @@
 Findings from reviews of this repository, and the changes shipped in
 response, are recorded in [`audits/`](audits/). The v1.0 implementation
 carries a pre-publication internal adversarial review
-([2026-10-11](audits/2026-10-11-internal-adversarial-review.md)); external
+([2026-10-11](audits/2026-10-11-internal-adversarial-review.md)) and a
+follow-up hardening against the zero-semantics vulnerability class
+([2026-10-13](audits/2026-10-13-zero-semantics-hardening.md)); external
 audits are welcome and will be recorded in the same log.
 
 ## Reporting
