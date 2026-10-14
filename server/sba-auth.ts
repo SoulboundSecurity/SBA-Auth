@@ -79,9 +79,10 @@ export interface SbaConfig {
   /** Request-mode nonce cache capacity. Default 10_000. */
   nonceCacheMax?: number;
 
-  /** Raw request body extractor for request mode. Defaults to
-   *  `(req as any).rawBody ?? ''`. */
-  rawBodyOf?: (req: Request) => string;
+  /** Raw request body extractor for request mode. Defaults to `req.rawBody`;
+   *  a missing capture denies the request. Return `''` for a captured empty
+   *  body. */
+  rawBodyOf?: (req: Request) => string | undefined;
   /** Path extractor for request mode. Defaults to `req.path`. */
   pathOf?: (req: Request) => string;
 }
@@ -438,7 +439,7 @@ export function sbaRequestAuth(config: SbaConfig): RequestHandler {
   const maxAgeMs = config.requestMaxAgeMs ?? SBA_DEFAULTS.requestMaxAgeMs;
   const allowCheck = makeAllowCheck(config.allowlist);
   const nonces = new NonceCache(config.nonceCacheMax ?? SBA_DEFAULTS.nonceCacheMax);
-  const rawBodyOf = config.rawBodyOf ?? ((req: Request) => (req as { rawBody?: string }).rawBody ?? '');
+  const rawBodyOf = config.rawBodyOf ?? ((req: Request) => (req as { rawBody?: string }).rawBody);
   const pathOf = config.pathOf ?? ((req: Request) => req.path);
 
   return async (req: Request, res: Response, next: NextFunction) => {
@@ -463,7 +464,9 @@ export function sbaRequestAuth(config: SbaConfig): RequestHandler {
       // The signature binds to the exact action.
       if (payload.method !== req.method) return deny(res);
       if (payload.path !== pathOf(req)) return deny(res);
-      if (payload.bodyHash.toLowerCase() !== bodyHashOf(rawBodyOf(req)).toLowerCase()) return deny(res);
+      const rawBody = rawBodyOf(req);
+      if (typeof rawBody !== 'string') return deny(res);
+      if (payload.bodyHash.toLowerCase() !== bodyHashOf(rawBody).toLowerCase()) return deny(res);
 
       const issuedAtMs = Date.parse(payload.issuedAt);
       if (!Number.isFinite(issuedAtMs)) return deny(res);

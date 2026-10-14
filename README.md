@@ -58,6 +58,7 @@ unenrolled-key rejection, and instant session revocation.
 Server integration is one middleware per surface:
 
 ```ts
+import express from 'express';
 import { sbaSessionAuth, sbaRequestAuth, makeViemPredicate, deriveIdentityLocal } from './server/sba-auth.js';
 
 const config = {
@@ -67,6 +68,13 @@ const config = {
   deriveIdentity: (a) => deriveIdentityLocal(a, 'YOUR_FORK_SALT', chainId),
   allowlist: ADMIN_IDENTITY_IDS,                // authorization data, not a secret
 };
+
+// Capture the exact bytes before request auth. If rawBody is missing,
+// request-mode authentication denies the request. Add equivalent capture
+// to any other body parser used by request-protected routes.
+app.use(express.json({
+  verify: (req, _res, buf) => { (req as { rawBody?: string }).rawBody = buf.toString('utf8'); },
+}));
 
 app.get('/admin/stats',  rateLimiter, sbaSessionAuth(config), handler);
 app.post('/admin/action', rateLimiter, sbaRequestAuth(config), handler);
