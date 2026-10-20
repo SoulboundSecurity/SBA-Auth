@@ -56,7 +56,7 @@ approval-by-screenshot. **Residual:** a compromised operator endpoint
 during an active window (bounded by request mode to exactly the actions
 the operator visibly confirms).
 
-## 2. Protocol operator console (the reference deployment)
+## 2. Protocol operator console (the originating use case)
 
 **Today:** DeFi and infrastructure protocols run backend consoles that can
 pause systems, change parameters, and trigger recovery actions, typically
@@ -67,10 +67,14 @@ position.
 envelope re-verified against live chain state on every request; no session
 store, account row, or recovery path exists to attack. Database, backend,
 and RPC compromise each yield nothing: the console's authorization data
-cannot sign. This is the configuration Soulbound Finance has run in
-production since April 2026: session mode with a one-hour window, reads
-and preset-validated writes behind the same gauntlet, every mutation
-audit-logged under a salted identity derivative.
+cannot sign. This is the shape in which Soulbound Finance has run the SBA
+concept since April 2026, on its own implementation of the earlier MIT
+specification: session mode with a one-hour window, reads and
+preset-validated writes behind the same gauntlet, every mutation
+audit-logged under a salted identity derivative. That system does not
+run this repository's code; this is the AGPL-3.0 implementation of the
+same pattern for other operators, and improvements made here (the
+verified request summary, for one) may be adopted there in turn.
 
 - Enrollment: open (the allowlist does the authorizing) or approval-gated.
 - Mode: session for reads, request mode recommended for mutations.

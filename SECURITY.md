@@ -20,7 +20,7 @@ in the same log.
 
 - Two stages: engineering reviews adversarially before publication;
   the security team audits after it, without platform context, so its
-  findings hold for any adopter and not only for our deployment.
+  findings hold for any adopter of this code.
 - Every finding is recorded with a severity and the reasoning behind
   it, including the ones we decline, and including the ones that show
   our own earlier statements were wrong. Corrections are made in place

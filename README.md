@@ -9,8 +9,13 @@ surfaces where populations are small and stakes are high: exchange
 hot-wallet consoles, protocol operator panels, custodian approvals,
 infrastructure fleet administration.
 
-In production gating the operator control surface of
-[Soulbound Finance](https://soulbound.finance) since April 2026.
+**Provenance.** [Soulbound Finance](https://soulbound.finance) has gated
+its operator control surface with the SBA concept since April 2026,
+using its own implementation built from the original MIT concept
+specification (the [`v0-concept`](../../tree/v0-concept) tag). This
+repository is a separate implementation of the pattern, built for
+AGPL-3.0 adopters. Soulbound Finance does not run this code;
+improvements made here may be carried back into that system over time.
 
 ## How it works
 

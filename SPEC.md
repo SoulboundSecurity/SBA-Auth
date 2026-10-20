@@ -242,9 +242,9 @@ identity value is attestation-linkable by design (it binds identity to an
 address through public chain data, which is what makes the roster
 independently auditable). Systems that additionally need usage records
 decorrelated from chain identities derive a second, salted internal
-identifier from the identity value with a server-held secret, as the
-reference deployment does; without that salt, platform records cannot be
-joined to chain identities.
+identifier from the identity value with a server-held secret, as
+Soulbound Finance's own implementation of the concept does; without that
+salt, platform records cannot be joined to chain identities.
 
 ## 8. Reference implementation
 
@@ -267,8 +267,16 @@ joined to chain identities.
   capture, nonce capacity, lying registry, construction guards,
   revocation). `npm run demo`; also run in CI on every push.
 
-The production-grade identity contract this pattern generalizes from is
-the SoulBound Protocol's identity layer; its role model is specified in
+**Provenance.** The SBA concept was first specified under MIT (tag
+`v0-concept`) and first deployed by Soulbound Finance, on its own
+implementation of that specification, to gate its operator control
+surface from April 2026. This repository is a separate implementation
+of the pattern, written for AGPL-3.0 adopters and generalized from that
+concept and from the SoulBound Protocol's identity contract. Soulbound
+Finance does not run this code; improvements made here may be carried
+back into that system. The identity contract this registry generalizes
+from is the SoulBound Protocol's identity layer; its role model is
+specified in
 [sbf-protocol's Role and Trust Model](https://github.com/SoulboundSecurity/sbf-protocol/blob/master/docs/PROTOCOL_SPEC.md#7-role-and-trust-model),
 which this repo's contracts follow.
 

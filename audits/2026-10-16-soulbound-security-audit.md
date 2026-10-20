@@ -6,7 +6,7 @@ adversarial review (2026-10-11) and the zero-semantics hardening
 (2026-10-13). The audit was conducted against the repository as a
 standalone artifact, deliberately without platform context, deployment
 assumptions, or other repositories, so that its findings stand for any
-adopter and not only for our own deployment. Scope: the
+adopter of this code. Scope: the
 enrollment contract, both middleware modes, the client helpers, the
 example, SPEC.md, USE_CASES.md, README.md, and the two prior entries in
 this log. Method: code and document reading, plus an external harness of
