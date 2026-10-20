@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0
+// SPDX-License-Identifier: AGPL-3.0-only
 /**
  * SBA-Auth client helpers: build and sign the session and request
  * envelopes the server middleware verifies. Works with any viem

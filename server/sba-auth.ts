@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0
+// SPDX-License-Identifier: AGPL-3.0-only
 /**
  * SBA-Auth server middleware: wallet-native authentication with no stored
  * credentials.

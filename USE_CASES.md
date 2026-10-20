@@ -16,7 +16,7 @@ Terms used throughout:
   window (default 1h); revocable server-side at any instant by its nonce.
 - **Request mode** — every call carries its own signature bound to method,
   path, and body hash; single-use, non-replayable. One dangerous action =
-  one human-readable confirmation on the signer's hardware display.
+  one hardware confirmation bound to exactly the bytes that execute.
 
 ---
 
@@ -29,17 +29,22 @@ the audit trail is whatever the ticketing system remembers.
 
 **With SBA-Auth:**
 
-- Enrollment: approval-gated. The security team's multisig is the
-  enrollment authority; each operator's enrollment is co-signed after
-  internal vetting, from the operator's dedicated hardware wallet, and is
-  permanently visible on-chain. The enrollment log IS the roster audit.
+- Enrollment: approval-gated. The security team's enrollment-authority
+  key co-signs each operator's enrollment after internal vetting; the
+  operator mints from a dedicated hardware wallet, and the enrollment is
+  permanently visible on-chain. The reference registry verifies ECDSA
+  approvals, so the authority is an EOA or a threshold-ECDSA signer;
+  contract-wallet (ERC-1271) authorities are queued. The enrollment log
+  is the roster of who could ever be authorized.
 - Mode: request mode for everything that moves value or changes limits
   (each withdrawal approval, limit change, or address-list edit is one
-  hardware-wallet confirmation displaying exactly what is signed); session
-  mode for dashboards.
-- Allowlist: per-console configuration pinning enrolled identity values;
-  removing an operator is a config change, and their identity remains
-  on-chain as a historical record that can never silently return.
+  hardware-wallet confirmation bound to exactly the bytes submitted);
+  session mode for dashboards.
+- Allowlist: per-console configuration pinning enrolled identity values.
+  This is the record of who is authorized now; keep it under change
+  control, because grants and removals within the enrolled set emit no
+  chain event. Removing an operator is a config change, and their
+  identity remains on-chain as a historical record.
 - Deployment: IP-fenced front end, dedicated signing hardware per
   operator, rate limiter mounted before the verifier.
 
@@ -76,10 +81,19 @@ and admin panels authenticated by the weakest laptop in the office.
 **With SBA-Auth:** each approver enrolls once (approval-gated, co-signed by
 the compliance function); every approval is a request-mode signature whose
 body hash covers the exact disbursement payload. The approval artifact is
-cryptographic, attributable, and verifiable after the fact: the signed
-envelope plus the on-chain enrollment proves *which enrolled identity
-approved exactly which bytes, when*. Dual-control is two request-mode
-gates in sequence with disjoint allowlists.
+cryptographic and attributable: the signed envelope, the raw request
+body, and the on-chain enrollment together prove *which enrolled
+identity signed exactly which bytes*. The application must retain all
+three; the middleware verifies and attaches the result to the request,
+it does not persist it. The signed `issuedAt` is asserted by the signer;
+the server's receipt time is the attested time of approval.
+
+Dual control is an application-level two-step, not two middlewares on
+one route (one request carries one signer's envelope): the first
+approver's request-mode call creates a pending action keyed by its body
+hash; the second approver, from a disjoint allowlist, submits a
+request-mode call over the same bytes; the application matches the two
+hashes within an expiry and executes.
 
 **Eliminated:** approval forgery, after-the-fact ambiguity about who
 approved what. **Residual:** collusion among enrolled approvers, same as
@@ -94,8 +108,9 @@ unaudited and offboarding is a prayer.
 **With SBA-Auth:** the panel's auth reduces to enrolled hardware keys
 checked against chain state per request. Offboarding is removing one
 identity value from the allowlist; the on-chain enrollment history shows
-every identity that was ever authorized, with timestamps, independent of
-the operator's own records. Chain-read dependency is a feature here:
+every identity that was ever eligible, with timestamps, independent of
+the operator's own records, and the change-controlled allowlist shows
+who was authorized when. Chain-read dependency is a feature here:
 validators already run nodes, so the predicate reads their own
 infrastructure.
 

@@ -23,17 +23,19 @@ public chain and the registration policy in a smart contract:
   address. Enrollment policy is the organization's extension point: open,
   or co-signed by an enrollment authority (KYC, HR onboarding, dual
   approval — all pushed into one ceremony). The enrollment log is a
-  public, append-only roster: authority can never quietly move to a new
-  key.
+  public, append-only roster of who could ever be authorized: a new key
+  is a new, visible enrollment. Who is authorized now is the allowlist,
+  deployment configuration under change control.
 - **Authenticate per request, statelessly.** Every request recovers a
-  signer from an EIP-712 signature (domain-bound to one deployment),
-  checks live chain state that the signer holds an enrolled identity,
-  checks *locally* that the identity derives from the signer's own
-  address, and checks a deployment allowlist. Fail-closed throughout.
+  signer from an EIP-712 signature (domain-bound to one registry
+  deployment), checks live chain state that the signer holds an enrolled
+  identity, checks *locally* that the identity derives from the signer's
+  own address, and checks a deployment allowlist. Fail-closed throughout.
 - **Two modes.** Session mode: one signature per bounded window,
   instantly revocable. Request mode: one signature per action, bound to
   method + path + body hash, single-use — every dangerous action becomes
-  a human-readable hardware-wallet confirmation.
+  one hardware-wallet confirmation bound to exactly the bytes that
+  execute.
 
 Database compromise yields nothing. Server compromise yields nothing an
 attacker can present. RPC compromise alone yields nothing. Access reduces
@@ -82,7 +84,7 @@ independently auditable roster.
 Day-to-day operation maps to familiar enterprise controls, minus the
 credential store. Session establishment is one wallet signature with a
 bounded TTL, instantly revocable. Privileged mutations are step-up
-authorization: one hardware-confirmed signature per action, displaying
+authorization: one hardware-confirmed signature per action, bound to
 exactly what executes. There is no password lifecycle, no MFA reset
 desk, and no server-side credential to steal or rotate. Deprovisioning
 is a one-line allowlist change; database, backend, or RPC compromise
@@ -99,11 +101,30 @@ mints no access, because nothing the server stores can sign.
   workforce SSO: no roles, no recovery flow (a lost key is a new,
   publicly visible enrollment, by design). Identity checks fail
   closed: an unreachable chain or RPC locks the control surface shut.
-  Per-action confirmation is deliberate friction, and it doubles as an
-  attributable audit trail.
+  Per-action confirmation is deliberate friction, and the signed
+  envelopes are the raw material for an attributable audit trail when
+  the deployment retains them with the request bodies.
 
 Inside that envelope — small vetted population, real key custody,
 reachable chain — the server side offers no credential to attack.
+
+## Security review
+
+This repository is adversarially reviewed before and after publication,
+and the whole record is public in [`audits/`](audits/): every finding,
+its severity, what we did about it, and where we were wrong.
+
+| Date | Review | Outcome |
+| --- | --- | --- |
+| [2026-10-11](audits/2026-10-11-internal-adversarial-review.md) | Internal adversarial review, pre-publication | 1 Medium (nonce consumed before verification), fixed in the same revision |
+| [2026-10-13](audits/2026-10-13-zero-semantics-hardening.md) | Internal review against the zero-semantics class | 2 Low hardened: unconditional zero-identity rejection, loud construction-time config validation |
+| [2026-10-16](audits/2026-10-16-external-adversarial-review.md) | **External adversarial review by Gakarot**, harness-verified ([PDF](audits/2026-10-16-external-adversarial-review.pdf)) | 13 findings and 3 notes, all reproduced (20/20 on the reviewer's harness): 1 High claim, 5 Medium, 6 Low, 1 Informational. Documents corrected; implementation fixes in the following revision; one false statement in our own 2026-10-11 review corrected in place |
+
+The standard we hold ourselves to: findings are published with
+severity and reasoning, fixes ship in the open, claims that turn out to
+be stronger than the code are corrected in the record rather than
+quietly edited, and external reviewers are credited. Reviews are
+welcome at security@soulboundsecurity.io; see [SECURITY.md](SECURITY.md).
 
 ## Repository layout
 

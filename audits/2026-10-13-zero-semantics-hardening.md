@@ -22,7 +22,13 @@ clothing?*
 - **Zero-address signature recovery is rejected** in both the contract
   and the verification path.
 - **Every absence in the middleware resolves to denial**: empty
-  allowlist, null predicate result, missing raw-body capture.
+  allowlist, null predicate result, ~~missing raw-body capture~~.
+  *Corrected 2026-10-16:* the raw-body item was repeated from the
+  2026-10-11 entry rather than re-verified, and it was false: an absent
+  capture resolved to the empty string, which is a default reaching a
+  trust gate, the exact class this entry is about. Found by the external
+  review (V-09); fixed in the following revision. See
+  [`2026-10-16-external-adversarial-review.md`](2026-10-16-external-adversarial-review.md).
 - **The incident's trigger class cannot occur**: the vulnerability was
   born in an upgrade reinterpreting surviving storage, and these
   contracts have no proxies, no upgrade path, and an append-only

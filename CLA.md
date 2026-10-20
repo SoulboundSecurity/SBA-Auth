@@ -1,6 +1,6 @@
 # Contributor License Agreement
 
-Thank you for your interest in contributing to SBF Protocol, owned and maintained by Soulbound Security LTD ("Company").
+Thank you for your interest in contributing to SBA-Auth, owned and maintained by Soulbound Security LTD ("Company").
 
 By submitting a pull request or otherwise contributing code, documentation, or other materials ("Contribution") to this repository, you agree to the following terms:
 
@@ -18,7 +18,7 @@ You understand that the decision to include your Contribution in the project is 
 
 ## 4. AGPL-3.0 Compatibility
 
-You acknowledge that this project is licensed under AGPL-3.0 and that your Contribution will be distributed under the same license. The additional rights granted in Section 1 allow the Company to also use your Contribution in proprietary products and services.
+You acknowledge that this project is licensed under AGPL-3.0-only and that your Contribution will be distributed under the same license. The additional rights granted in Section 1 allow the Company to also use your Contribution in proprietary products and services.
 
 ## 5. Agreement
 

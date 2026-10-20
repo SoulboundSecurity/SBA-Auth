@@ -5,10 +5,27 @@
 Findings from reviews of this repository, and the changes shipped in
 response, are recorded in [`audits/`](audits/). The v1.0 implementation
 carries a pre-publication internal adversarial review
-([2026-10-11](audits/2026-10-11-internal-adversarial-review.md)) and a
+([2026-10-11](audits/2026-10-11-internal-adversarial-review.md)), a
 follow-up hardening against the zero-semantics vulnerability class
-([2026-10-13](audits/2026-10-13-zero-semantics-hardening.md)); external
-audits are welcome and will be recorded in the same log.
+([2026-10-13](audits/2026-10-13-zero-semantics-hardening.md)), and an
+independent external adversarial review by Gakarot
+([2026-10-16](audits/2026-10-16-external-adversarial-review.md),
+[report PDF](audits/2026-10-16-external-adversarial-review.pdf)) whose
+13 findings were all reproduced on the reviewer's harness and are
+dispositioned there. Further external audits are welcome and will be
+recorded in the same log.
+
+## How we review
+
+- Every finding is recorded with a severity and the reasoning behind
+  it, including the ones we decline, and including the ones that show
+  our own earlier statements were wrong. Corrections are made in place
+  with a dated note; nothing is quietly edited out of the record.
+- Fixes ship in the open and the entry that motivated them says so.
+- External reviewers are named and credited. Internal reviews are
+  attributed to Soulbound Security, not to individuals.
+- Reproducibility counts: where a reviewer supplies a harness, we re-run
+  it before triage and record the result.
 
 ## Reporting
 

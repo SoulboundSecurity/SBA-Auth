@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0
+// SPDX-License-Identifier: AGPL-3.0-only
 /**
  * Minimal SBA-Auth example server. Reads are session-gated; the one
  * mutation is request-gated: each call needs its own wallet signature

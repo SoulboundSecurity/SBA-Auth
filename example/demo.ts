@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0
+// SPDX-License-Identifier: AGPL-3.0-only
 /**
  * End-to-end SBA-Auth demonstration against a local anvil node.
  *
