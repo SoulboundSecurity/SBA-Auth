@@ -12,23 +12,28 @@
  *   and low-stakes surfaces.
  * - Request mode (`sbaRequestAuth`): every request carries its own
  *   signature over (method, path, bodyHash, nonce, issuedAt). Nonces are
- *   single-use and signatures bind to the exact action, so capture and
- *   replay yield nothing. Use for mutations: each dangerous action becomes
- *   one human-readable wallet confirmation.
+ *   single-use and the signature binds to the exact action: method and
+ *   full URL in clear, the body as a hash. Use for mutations.
  *
  * Both modes run the same identity gauntlet after signature recovery:
  * live identity lookup through a pluggable predicate (fail-closed on
- * timeout), a local derivation check binding the identity value to the
- * signer's own address, and an allowlist of identity values. Nothing the
- * server stores can mint access: the allowlist authorizes, it cannot sign.
+ * timeout), a mandatory local derivation check binding the identity value
+ * to the signer's own address, and an allowlist of identity values.
+ * Nothing the server stores can mint access: the allowlist authorizes, it
+ * cannot sign.
  *
- * The EIP-712 domain REQUIRES `verifyingContract`: signatures are bound to
- * one deployment and cannot be phished for one system and spent on another.
+ * The EIP-712 domain REQUIRES `verifyingContract`: a signature is bound to
+ * one registry deployment and verifies against no other domain. The
+ * `purpose` string is REQUIRED and has no default: it is the audience the
+ * signer sees, and services that share a registry must not share it.
+ * Neither defends against a page soliciting a signature for this very
+ * deployment; that is the signer-endpoint residual (SPEC.md section 6).
  *
  * Mounting guidance: place your rate limiter BEFORE these middlewares so
  * unauthenticated traffic is throttled before it costs an identity lookup.
  * For request mode, capture the raw request body (see `rawBodyOf`), e.g.:
  *   express.json({ verify: (req, _res, buf) => { (req as any).rawBody = buf.toString('utf8'); } })
+ * A request that carries a body without a captured raw body is denied.
  */
 
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
@@ -56,16 +61,20 @@ export interface SbaConfig {
   chainId: number;
   verifyingContract: Address;
 
-  /** Fixed purpose string shown in the wallet; must match exactly. */
-  purpose?: string;
+  /** REQUIRED, no default. The audience string the signer sees in the
+   *  wallet; must match exactly. Give every service its own value:
+   *  services sharing a registry, domain name, AND purpose accept each
+   *  other's envelopes. */
+  purpose: string;
 
   /** Live identity lookup (chain read). Fail-closed on null/timeout. */
   predicate: IdentityPredicate;
 
-  /** Local derivation check: returns the identity value expected for an
-   *  address. When provided, the predicate's result must equal it, so a
-   *  lying registry or RPC cannot vouch for a foreign identity. */
-  deriveIdentity?: (address: Address) => Hex;
+  /** REQUIRED local derivation check: returns the identity value expected
+   *  for an address. The predicate's result must equal it, so a lying
+   *  registry or RPC cannot vouch for a foreign identity. Forks pass
+   *  `deriveIdentityLocal` with their own salt. */
+  deriveIdentity: (address: Address) => Hex;
 
   /** Authorized identity values (lowercased 0x hex), or a predicate. */
   allowlist: Iterable<string> | ((identityId: string) => boolean);
@@ -76,13 +85,21 @@ export interface SbaConfig {
   requestMaxAgeMs?: number;
   /** Identity lookup timeout (fail-closed). Default 3000ms. */
   rpcTimeoutMs?: number;
-  /** Request-mode nonce cache capacity. Default 10_000. */
+  /** Request-mode nonce cache capacity; a positive integer. Default
+   *  10_000. A cache full of live nonces DENIES new requests rather than
+   *  evicting a live nonce, so capacity bounds authenticated request-mode
+   *  traffic per freshness window instead of weakening single-use. */
   nonceCacheMax?: number;
 
-  /** Raw request body extractor for request mode. Defaults to
-   *  `(req as any).rawBody ?? ''`. */
-  rawBodyOf?: (req: Request) => string;
-  /** Path extractor for request mode. Defaults to `req.path`. */
+  /** Request mode: raw request body extractor. Return the exact body
+   *  string received, '' for a bodyless request, or `undefined` to deny.
+   *  The default reads `(req as any).rawBody`; when that is absent and
+   *  the request carries a body (Content-Length or Transfer-Encoding),
+   *  it returns `undefined` and the request is denied. */
+  rawBodyOf?: (req: Request) => string | undefined;
+  /** Request mode: path extractor. Defaults to `req.originalUrl`, the
+   *  full path as requested including any mount prefix and query string.
+   *  The client signs exactly this string. */
   pathOf?: (req: Request) => string;
 }
 
@@ -113,7 +130,6 @@ export interface SessionAuthHandler extends RequestHandler {
 export const SBA_DEFAULTS = {
   domainName: 'SBA Auth',
   domainVersion: '1',
-  purpose: 'SBA Administrative Access',
   sessionWindowMs: 60 * 60 * 1000,
   requestMaxAgeMs: 90 * 1000,
   rpcTimeoutMs: 3000,
@@ -233,8 +249,20 @@ function assertConfig(config: SbaConfig): void {
   if (!Number.isInteger(config.chainId) || config.chainId <= 0) {
     throw new Error('sba-auth: chainId must be a positive integer');
   }
+  if (typeof config.purpose !== 'string' || config.purpose.length === 0) {
+    throw new Error('sba-auth: purpose is required and has no default (it is the audience the signer sees)');
+  }
   if (typeof config.predicate !== 'function') {
     throw new Error('sba-auth: predicate is required');
+  }
+  if (typeof config.deriveIdentity !== 'function') {
+    throw new Error('sba-auth: deriveIdentity is required (the registry is never the sole witness)');
+  }
+  if (
+    config.nonceCacheMax !== undefined &&
+    (!Number.isInteger(config.nonceCacheMax) || config.nonceCacheMax <= 0)
+  ) {
+    throw new Error('sba-auth: nonceCacheMax must be a positive integer');
   }
 }
 
@@ -253,38 +281,42 @@ function makeAllowCheck(allowlist: SbaConfig['allowlist']): (id: string) => bool
   return (id: string) => set.has(id.toLowerCase());
 }
 
-/** Insertion-ordered nonce cache with TTL; oldest entries evicted at
- *  capacity. Entries are inserted only for fully verified requests, so the
- *  cache is bounded by authenticated traffic. Single-process semantics:
- *  multi-replica deployments back this with a shared store or route
- *  request-mode traffic to one replica. */
+/** Insertion-ordered nonce cache with TTL. Entries are inserted only for
+ *  fully verified requests, so the cache is bounded by authenticated
+ *  traffic. At capacity, expired entries are evicted first; if the cache
+ *  is still full of LIVE nonces the new request is refused, never a live
+ *  nonce evicted: single-use is a guarantee, capacity is a rate ceiling
+ *  on authenticated request-mode traffic per freshness window.
+ *  Single-process semantics: state does not span replicas or survive a
+ *  restart (SPEC.md section 9). */
 class NonceCache {
   private entries = new Map<string, number>();
   constructor(private max: number) {}
 
-  /** Returns false if the nonce was already seen and is still live. */
+  /** Returns false if the nonce was already seen and is still live, or if
+   *  the cache is full of live nonces (fail closed). */
   consume(nonce: string, ttlMs: number): boolean {
     const now = Date.now();
     const existing = this.entries.get(nonce);
     if (existing !== undefined && existing > now) return false;
     this.entries.delete(nonce);
-    this.entries.set(nonce, now + ttlMs);
-    if (this.entries.size > this.max) {
-      for (const key of this.entries.keys()) {
-        if (this.entries.size <= this.max) break;
-        this.entries.delete(key);
+    if (this.entries.size >= this.max) {
+      for (const [key, expiresAt] of this.entries) {
+        if (expiresAt <= now) this.entries.delete(key);
       }
+      if (this.entries.size >= this.max) return false;
     }
+    this.entries.set(nonce, now + ttlMs);
     return true;
   }
 }
 
-/** Shared tail of the gauntlet (SPEC.md steps 5-7): live identity lookup
- *  through the pluggable predicate (fail-closed on timeout), then the
- *  LOCAL derivation check — the returned identity must equal the value
- *  derived from the signer's own address, so a lying registry or RPC
- *  cannot vouch for a foreign identity — then the allowlist. Returns the
- *  verified identity value or null. */
+/** Shared tail of the gauntlet (SPEC.md section 3, identity tail): live
+ *  identity lookup through the pluggable predicate (fail-closed on
+ *  timeout), then the mandatory LOCAL derivation check (the returned
+ *  identity must equal the value derived from the signer's own address,
+ *  so a lying registry or RPC cannot vouch for a foreign identity), then
+ *  the allowlist. Returns the verified identity value or null. */
 async function verifyIdentity(
   config: SbaConfig,
   address: Address,
@@ -306,10 +338,10 @@ async function verifyIdentity(
     ZERO_IDENTITY.test(identity.identityId)
   ) return null;
 
-  if (config.deriveIdentity) {
-    const expected = config.deriveIdentity(address).toLowerCase();
-    if (identity.identityId.toLowerCase() !== expected) return null;
-  }
+  // Unconditional: the registry is never the sole witness to the binding
+  // between a signer and an identity value.
+  const expected = config.deriveIdentity(address).toLowerCase();
+  if (identity.identityId.toLowerCase() !== expected) return null;
 
   if (!allowCheck(identity.identityId)) return null;
   return identity.identityId;
@@ -325,15 +357,16 @@ async function verifyIdentity(
  * surfaces, and request mode for anything that mutates.
  *
  * The signed nonce names the session: `handler.revoke(nonce)` invalidates
- * it instantly (in-process set; multi-replica deployments back revocation
- * with a shared store). The domain carries the mandatory
- * `verifyingContract`, so a session signed for this deployment verifies
- * nowhere else.
+ * it instantly on this instance (in-process set: it does not span
+ * replicas or survive a restart). The domain carries the mandatory
+ * `verifyingContract`, so a session signed for this registry verifies
+ * against no other domain; the mandatory `purpose` separates services
+ * that share a registry.
  *
  * Gauntlet per request (SPEC.md section 3): envelope shape → purpose →
- * freshness window → signature recovery → live identity predicate
- * (fail-closed timeout) → local derivation check → allowlist. Every
- * failure is an identical 403. Mount your rate limiter BEFORE this
+ * not revoked → freshness window → signature recovery → live identity
+ * predicate (fail-closed timeout) → local derivation check → allowlist.
+ * Every failure is an identical 403. Mount your rate limiter BEFORE this
  * handler.
  */
 export function sbaSessionAuth(config: SbaConfig): SessionAuthHandler {
@@ -344,7 +377,7 @@ export function sbaSessionAuth(config: SbaConfig): SessionAuthHandler {
     chainId: config.chainId,
     verifyingContract: config.verifyingContract,
   };
-  const purpose = config.purpose ?? SBA_DEFAULTS.purpose;
+  const purpose = config.purpose;
   const windowMs = config.sessionWindowMs ?? SBA_DEFAULTS.sessionWindowMs;
   const allowCheck = makeAllowCheck(config.allowlist);
   const revoked = new Set<string>();
@@ -407,24 +440,42 @@ export function sbaSessionAuth(config: SbaConfig): SessionAuthHandler {
 
 // ─── Request mode ─────────────────────────────────────────────────────
 
+/** Default raw-body extractor. A captured string is the body. No capture
+ *  and no body (no Content-Length or Transfer-Encoding) is the empty
+ *  string. No capture WITH a body is `undefined`, which denies: an
+ *  absent capture must never be read as an empty body, or a signature
+ *  over nothing would authorize anything. */
+function defaultRawBodyOf(req: Request): string | undefined {
+  const raw = (req as { rawBody?: unknown }).rawBody;
+  if (typeof raw === 'string') return raw;
+  if (raw !== undefined) return undefined;
+  const length = req.headers['content-length'];
+  const hasBody =
+    (length !== undefined && length !== '0') ||
+    req.headers['transfer-encoding'] !== undefined;
+  return hasBody ? undefined : '';
+}
+
 /**
  * Request-mode middleware: every call carries its own EIP-712 signature
- * over `{purpose, method, path, bodyHash, nonce, issuedAt}`. The
- * signature binds to the exact action: method and path must match the
- * request, `bodyHash` must equal keccak256 of the raw body bytes
- * received (capture them via `rawBodyOf`; see the file header for the
- * express.json verify hook), `issuedAt` bounds age to `requestMaxAgeMs`,
+ * over `{purpose, method, path, bodyHash, nonce, issuedAt}`.
+ * The signature binds to the exact action: `method` must match the
+ * request, `path` must equal the full original URL (mount prefix and
+ * query string included, exact bytes), `bodyHash` must equal keccak256
+ * of the raw body bytes received (captured via `rawBodyOf`; see the file
+ * header for the express.json verify hook; a body without a capture is
+ * denied), `issuedAt` bounds age to `requestMaxAgeMs`,
  * and the nonce is single-use, so a captured envelope replays as a 403.
  *
  * This is the recommended mode for every mutation: one dangerous action
- * equals one human-readable confirmation on the signer's hardware
- * display, and what the display shows is what executes.
+ * equals one hardware confirmation bound to exactly the bytes that
+ * execute. The device shows `method` and `path` in clear and the body as
+ * a hash.
  *
- * Nonce single-use is enforced in-process (`NonceCache`); multi-replica
- * deployments back it with a shared store or pin request-mode traffic to
- * one replica (SPEC.md section 9). Same gauntlet tail and identical-403
- * discipline as session mode; mount your rate limiter BEFORE this
- * handler.
+ * Nonce single-use is enforced in-process (`NonceCache`, fail-closed at
+ * capacity); state does not span replicas or survive a restart (SPEC.md
+ * section 9). Same gauntlet tail and identical-403 discipline as session
+ * mode; mount your rate limiter BEFORE this handler.
  */
 export function sbaRequestAuth(config: SbaConfig): RequestHandler {
   assertConfig(config);
@@ -434,12 +485,12 @@ export function sbaRequestAuth(config: SbaConfig): RequestHandler {
     chainId: config.chainId,
     verifyingContract: config.verifyingContract,
   };
-  const purpose = config.purpose ?? SBA_DEFAULTS.purpose;
+  const purpose = config.purpose;
   const maxAgeMs = config.requestMaxAgeMs ?? SBA_DEFAULTS.requestMaxAgeMs;
   const allowCheck = makeAllowCheck(config.allowlist);
   const nonces = new NonceCache(config.nonceCacheMax ?? SBA_DEFAULTS.nonceCacheMax);
-  const rawBodyOf = config.rawBodyOf ?? ((req: Request) => (req as { rawBody?: string }).rawBody ?? '');
-  const pathOf = config.pathOf ?? ((req: Request) => req.path);
+  const rawBodyOf = config.rawBodyOf ?? defaultRawBodyOf;
+  const pathOf = config.pathOf ?? ((req: Request) => req.originalUrl);
 
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -460,10 +511,13 @@ export function sbaRequestAuth(config: SbaConfig): RequestHandler {
       ) return deny(res);
       if (payload.purpose !== purpose) return deny(res);
 
-      // The signature binds to the exact action.
+      // The signature binds to the exact action: method, full URL, body
+      // bytes.
       if (payload.method !== req.method) return deny(res);
       if (payload.path !== pathOf(req)) return deny(res);
-      if (payload.bodyHash.toLowerCase() !== bodyHashOf(rawBodyOf(req)).toLowerCase()) return deny(res);
+      const rawBody = rawBodyOf(req);
+      if (rawBody === undefined) return deny(res);
+      if (payload.bodyHash.toLowerCase() !== bodyHashOf(rawBody).toLowerCase()) return deny(res);
 
       const issuedAtMs = Date.parse(payload.issuedAt);
       if (!Number.isFinite(issuedAtMs)) return deny(res);
@@ -489,11 +543,11 @@ export function sbaRequestAuth(config: SbaConfig): RequestHandler {
 
       // Single-use, consumed only AFTER full verification: insertions are
       // unforgeable (valid signature from an enrolled, allowlisted identity
-      // required), so the cache is bounded by authenticated traffic and
-      // cannot be flooded to evict a live nonce; and a transient
-      // verification failure never burns a valid signature. Of two
-      // concurrent replays passing verification, exactly one wins: consume
-      // is a synchronous map operation.
+      // required), so the cache is bounded by authenticated traffic; a
+      // cache full of live nonces refuses rather than evicts; and a
+      // transient verification failure never burns a valid signature. Of
+      // two concurrent replays passing verification, exactly one wins:
+      // consume is a synchronous map operation.
       if (!nonces.consume(payload.nonce, maxAgeMs + 60_000)) return deny(res);
 
       req.sbaAuth = {

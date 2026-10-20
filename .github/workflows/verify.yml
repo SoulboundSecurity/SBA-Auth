@@ -1,0 +1,30 @@
+# Typecheck, build the registry, and run the end-to-end rejection matrix
+# against a local anvil node on every push and pull request.
+name: verify
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: foundry-rs/foundry-toolchain@v1
+      - run: npm ci
+      - run: npm run typecheck
+      - run: forge build
+      - name: start anvil
+        run: |
+          anvil --silent &
+          for i in $(seq 1 30); do
+            cast chain-id --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1 && exit 0
+            sleep 1
+          done
+          echo "anvil did not start" && exit 1
+      - run: npm run demo

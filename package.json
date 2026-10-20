@@ -1,6 +1,6 @@
 {
   "name": "sba-auth",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "SBA-Auth: wallet-native authentication with no stored credentials. Enrollment on-chain, per-request verification against live chain state.",
   "license": "AGPL-3.0-only",
   "type": "module",

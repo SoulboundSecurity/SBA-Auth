@@ -15,8 +15,9 @@ Terms used throughout:
 - **Session mode** — one wallet signature authorizes requests for a bounded
   window (default 1h); revocable server-side at any instant by its nonce.
 - **Request mode** — every call carries its own signature bound to method,
-  path, and body hash; single-use, non-replayable. One dangerous action =
-  one hardware confirmation bound to exactly the bytes that execute.
+  full URL, and body hash; single-use, non-replayable. One dangerous
+  action = one hardware confirmation bound to exactly the bytes that
+  execute.
 
 ---
 

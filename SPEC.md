@@ -1,6 +1,6 @@
 # SBA-Auth Specification
 
-Wallet-native authentication with no stored credentials. Version 1.0.
+Wallet-native authentication with no stored credentials. Version 1.1.
 
 ## 1. Design goal
 
@@ -74,20 +74,22 @@ the middle.
    `purpose`, `method`, `path`, `bodyHash`, `nonce`, and `issuedAt`.
 2. `purpose` equals the deployment's configured purpose string.
 3. Action binding: `method` equals the request method; `path` equals
-   the configured path extractor's output (default `req.path`, which in
-   Express is relative to the mount point and excludes the query
-   string; deployments that mount under a prefix or carry parameters in
-   the query configure `pathOf` to the full original URL); `bodyHash`
-   equals keccak256 of the raw body bytes received.
+   the full original URL as requested, mount prefix and query string
+   included, byte for byte (default extractor `req.originalUrl`); the
+   raw body bytes were captured (a request that carries a body without a
+   captured raw body is denied, never read as empty) and `bodyHash`
+   equals their keccak256.
 4. `issuedAt` parses, is no more than 60 seconds in the future, and is
    no older than `requestMaxAgeMs` (default 90 seconds).
 5. The signer's address is recovered from the EIP-712 signature over
    `SbaRequest`.
 6. Identity tail (below).
 7. `nonce` is consumed: denied if already seen and still live on this
-   instance, recorded otherwise. Consumption happens only after the full
-   tail succeeds, so insertions require a valid signature from an
-   enrolled, allowlisted identity.
+   instance, and denied if the cache is full of live nonces (capacity is
+   a ceiling on authenticated request-mode traffic per window, never a
+   reason to evict a live nonce); recorded otherwise. Consumption
+   happens only after the full tail succeeds, so insertions require a
+   valid signature from an enrolled, allowlisted identity.
 
 **Identity tail (both modes)**
 
@@ -96,23 +98,25 @@ the middle.
   malformed or zero identity value. Zero means absence, and absence
   never reaches the allowlist, regardless of what a non-conforming
   registry returns.
-- Local derivation check, when `deriveIdentity` is configured: the
-  returned identity value must equal the value derived from the signer's
-  own address, so a lying registry or RPC cannot vouch for a foreign
-  identity and possession of someone else's public identity value is
-  worthless. The reference example configures it; the middleware does
-  not yet require it, so a deployment that omits it trusts its registry
-  and RPC for this property.
+- Local derivation check, mandatory: the returned identity value must
+  equal the value derived from the signer's own address, so a lying
+  registry or RPC cannot vouch for a foreign identity and possession of
+  someone else's public identity value is worthless. `deriveIdentity`
+  is required configuration; the middleware refuses to construct
+  without it.
 - The identity value is on the allowlist (authorization data, loaded at
   construction; an empty list denies everything).
 
-**What the domain binds.** The EIP-712 domain is `{name, version,
-chainId, verifyingContract}` and **`verifyingContract` is mandatory**: a
-signature produced for one registry on one chain verifies against no
-other domain. The domain identifies a registry deployment, not a
-service. Services that share one registry, domain name, and purpose
-string accept each other's signatures; give each service its own
-purpose string, which is the audience the signer sees.
+**What the domain and the purpose bind.** The EIP-712 domain is
+`{name, version, chainId, verifyingContract}` and **`verifyingContract`
+is mandatory**: a signature produced for one registry on one chain
+verifies against no other domain. The domain identifies a registry
+deployment, not a service. The signed `purpose` is the audience: it is
+**mandatory configuration with no default**, the middleware refuses to
+construct without it, and services that share a registry must each use
+their own. Two services configured with the same registry, domain name,
+and purpose have declared themselves one audience and accept each
+other's envelopes.
 
 ## 4. Modes
 
@@ -134,8 +138,11 @@ any bearer window use request mode exclusively.
   a hash, not as fields; a front end that composes a malicious body
   *before* requesting the signature is not detected by the hash. That
   case is the signer-endpoint residual in section 6.
-- `nonce` is single-use (server-side TTL cache, per process), so capture
-  and replay on the same instance yield nothing.
+- `path` is the full original URL, mount prefix and query string
+  included, so no parameter travels outside the signature.
+- `nonce` is single-use (server-side TTL cache, per process, fail-closed
+  at capacity), so capture and replay on the same instance yield
+  nothing.
 - `issuedAt` bounds signature age (default 90 seconds).
 
 One dangerous action equals one hardware confirmation bound to exactly
@@ -152,9 +159,9 @@ those bytes. This is the recommended mode for every mutation.
 
 Compromise matrix: **database** yields nothing (no credentials exist
 there); **server** yields nothing an attacker can present (authorization
-data cannot sign); **registry or RPC alone** yields nothing when the
-local derivation check is configured (it is computed from the signer's
-own address, not from anything the registry returns); **deployment configuration
+data cannot sign); **registry or RPC alone** yields nothing (the
+mandatory local derivation check is computed from the signer's own
+address, not from anything the registry returns); **deployment configuration
 tampering** requires access that is root-equivalent by definition. Access
 reduces to possession of an enrolled, allowlisted hardware key, verified
 against live chain state on every request.
@@ -168,9 +175,9 @@ privilege escalation, silent authority transfer to a new key.
 **Mitigated by construction:** cross-deployment signature reuse (the
 bound domain: a signature for one registry verifies nowhere else);
 replay (request-mode nonces, per instance; session revocation, per
-instance); post-signing action tampering (body hash); registry
-equivocation (local derivation check, where configured); registry
-outage (fail-closed).
+instance); post-signing action tampering (body hash, full URL); registry
+equivocation (mandatory local derivation check); registry outage
+(fail-closed).
 
 **Explicitly out of scope:** the signer endpoint. This covers a
 compromised operator machine during an active window, and also
@@ -210,13 +217,16 @@ joined to chain identities.
 - `contracts/interfaces/ISBAIdentity.sol` — the minimal predicate surface
   (MIT-licensed): `hasIdentity`, `identityOf`.
 - `server/sba-auth.ts` — both modes for Express + viem, pluggable
-  predicate, local derivation check, fail-closed timeouts, session
+  predicate, mandatory local derivation check, fail-closed timeouts and raw-body handling, session
   revocation, single-use request nonces.
 - `client/sba-client.ts` — envelope construction and signing for any viem
   wallet client.
 - `example/` — a runnable end-to-end demonstration against a local anvil
-  node: deploy, enroll, authorize, and the full rejection matrix (replay,
-  tamper, unenrolled key, revocation). `npm run demo`.
+  node: deploy, enroll, authorize, and a 39-check acceptance and
+  rejection matrix covering every claim in this document (domain, chain,
+  purpose, expiry, freshness, method, full URL, body, raw-body
+  capture, nonce capacity, lying registry, construction guards,
+  revocation). `npm run demo`; also run in CI on every push.
 
 The production-grade identity contract this pattern generalizes from is
 the SoulBound Protocol's identity layer; its role model is specified in

@@ -6,7 +6,7 @@
  *
  * Session mode: one signature, reusable until expiry, revocable
  * server-side by its nonce. Request mode: one signature per action,
- * bound to method + path + body, single-use.
+ * bound to method + full URL + body bytes, single-use.
  */
 
 import { keccak256, toBytes, type Address, type Hex } from 'viem';
@@ -15,19 +15,20 @@ export interface SbaClientConfig {
   /** Chain id of the deployment; part of the EIP-712 domain. */
   chainId: number;
   /** REQUIRED domain binding: the identity registry address by
-   *  convention. A signature produced for this deployment verifies
-   *  nowhere else, which is what defeats cross-site signature phishing. */
+   *  convention. A signature produced for this registry verifies against
+   *  no other domain. It does not stop a page from soliciting a signature
+   *  for this very deployment; read what your wallet shows. */
   verifyingContract: Address;
   domainName?: string;
   domainVersion?: string;
-  /** Fixed purpose string the wallet displays; must match the server's. */
-  purpose?: string;
+  /** REQUIRED, no default: the audience string the wallet displays; must
+   *  match the server's exactly. */
+  purpose: string;
 }
 
 const DEFAULTS = {
   domainName: 'SBA Auth',
   domainVersion: '1',
-  purpose: 'SBA Administrative Access',
   sessionWindowMs: 60 * 60 * 1000,
 };
 
@@ -101,7 +102,7 @@ export async function signSession(
 ): Promise<{ header: string; nonce: string; expiresAt: number }> {
   const expiresAt = Date.now() + windowMs;
   const payload = {
-    purpose: config.purpose ?? DEFAULTS.purpose,
+    purpose: config.purpose,
     nonce: randomNonce(),
     validUntil: new Date(expiresAt).toISOString(),
   };
@@ -116,10 +117,12 @@ export async function signSession(
 }
 
 /** Sign one request: header value for `x-sba-request`, bound to this
- *  exact method, path, and body bytes, single-use and short-lived. Send
- *  the SAME body string you pass here — any difference in bytes changes
- *  the hash and the server denies. One dangerous action, one signature,
- *  one hardware-display confirmation. */
+ *  exact method, full URL, and body bytes; single-use and short-lived.
+ *  `path` is the full path as the server will see it in
+ *  `req.originalUrl`: mount prefix and query string included. Send the
+ *  SAME body string you pass here; any difference in bytes changes the
+ *  hash and the server denies. One dangerous action, one signature, one
+ *  hardware confirmation. */
 export async function signRequest(
   walletClient: TypedDataSigner,
   account: unknown,
@@ -127,7 +130,7 @@ export async function signRequest(
   request: { method: string; path: string; body?: string },
 ): Promise<{ header: string; nonce: string }> {
   const payload = {
-    purpose: config.purpose ?? DEFAULTS.purpose,
+    purpose: config.purpose,
     method: request.method.toUpperCase(),
     path: request.path,
     bodyHash: bodyHashOf(request.body ?? ''),

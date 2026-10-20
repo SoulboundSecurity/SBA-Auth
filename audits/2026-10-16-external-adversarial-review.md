@@ -24,6 +24,11 @@ below and in place. Severity below is ours, graded by impact under
 realistic deployment conditions; the reviewer's classification is kept
 in parentheses.
 
+**Status.** Documents were corrected in the revision that added this
+entry. The implementation changes shipped in the next revision as
+**v1.1**; the "Fixed in v1.1" section below records
+them and the reviewer's harness result against the fixed code.
+
 ---
 
 ## Findings and dispositions
@@ -46,6 +51,53 @@ in parentheses.
 | N-1 | `CLA.md` names "SBF Protocol" | Informational | **Fixed.** Names SBA-Auth |
 | N-2 | License identifiers disagree: SPDX `AGPL-3.0`, package `AGPL-3.0-only`, LICENSE preamble "or any later version" | Low | **Fixed.** `AGPL-3.0-only` everywhere, including the LICENSE preamble; the dual-license model depends on a single, unambiguous grant |
 | N-3 | No unit tests, contract tests, or CI; the demo's eight checks do not cover the cases the reviewer lists | Medium (process) | **Queued.** The rejection matrix is extended to the reviewer's gap list (wrong chain or contract, wrong purpose, expired session, stale or future issuance, method or path mismatch, enrolled-but-not-allowlisted key, lying predicate) and run in CI against a local chain. Our 2026-10-11 wording is amended |
+
+## Fixed in v1.1
+
+Shipped in the revision following this entry, verified by strict
+typecheck and the extended end-to-end matrix (39 of 39 against a local
+chain), and by re-running the reviewer's own harness against the fixed
+code with only its configuration adapted to the new required fields:
+**10 of its 20 checks now report the fixed behaviour**, exactly the
+checks for V-02 (3), V-03 (1), V-05 (4), and V-09 (2). The other 10
+report unchanged behaviour that is documented as designed: a shared
+purpose is a shared audience (V-01), state is per instance (V-06),
+dual control is an application workflow (V-10), and the timestamp
+bounds are as documented (V-12).
+
+- **V-01:** the default `purpose` is removed; `purpose` is required
+  configuration on both middlewares and the client, and construction
+  throws without it. Documented as the audience the signer sees.
+- **V-02:** the default path extractor is `req.originalUrl`: mount
+  prefix and query string are inside the signature. The example server
+  exposes a mounted route to prove it.
+- **V-03:** `deriveIdentity` is required; construction throws without
+  it; the derivation check runs unconditionally.
+- **V-04:** documents were corrected in the prior revision. The
+  implementation half, a server-verified human-readable `summary` field
+  in the request struct, is a feature in its own right and ships as its
+  own commit immediately after this one; this entry records it when it
+  lands.
+- **V-05:** `nonceCacheMax` must be a positive integer (construction
+  throws otherwise). At capacity the cache evicts expired entries only
+  and refuses the request if still full of live nonces: capacity is a
+  ceiling on authenticated request-mode traffic per window, never a
+  reason to evict a live nonce.
+- **V-09:** the default raw-body extractor returns `undefined` when no
+  capture exists and the request carries a body (Content-Length or
+  Transfer-Encoding), and `undefined` denies. A bodyless request still
+  hashes the empty string, so bodyless routes keep working.
+- **N-3:** the demo matrix grows from 8 to 39 checks, covering every
+  case the reviewer listed as unexercised (wrong chain, wrong
+  `verifyingContract`, wrong purpose, expired session, stale and future
+  `issuedAt`, method and path mismatch, enrolled-but-not-allowlisted key,
+  lying predicate) plus the regressions for each fix above, and a
+  GitHub Actions workflow runs typecheck, `forge build`, and the matrix
+  against anvil on every push and pull request.
+
+Still queued, as dispositioned: ERC-1271 enrollment authorities (V-07),
+an injectable nonce/revocation store (V-06), and a verification callback
+for audit logging (V-11).
 
 ## Corrected in this log
 
@@ -100,9 +152,10 @@ verified against live chain state. What did not survive unchanged is a
 set of statements that described the implementation as stronger than it
 was: by construction where it was by configuration (V-03), human-readable
 where it was hash-bound (V-04), one deployment where it was one registry
-(V-01), and fail-closed where it was not (V-09). Those statements are
-corrected in this revision; the implementation changes they call for
-ship in the next, with this entry updated to record them.
+(V-01), and fail-closed where it was not (V-09). Those statements were
+corrected first, against the code as it stood; the implementation was
+then brought up to the corrected statements in v1.1, and the claims
+that were scoped down (V-03, V-04, V-09) are true by construction again.
 
 We thank Gakarot for a review that was evidence-first, reproducible, and
 precise about its own limits. External review of this repository
