@@ -33,9 +33,10 @@ public chain and the registration policy in a smart contract:
   own address, and checks a deployment allowlist. Fail-closed throughout.
 - **Two modes.** Session mode: one signature per bounded window,
   instantly revocable. Request mode: one signature per action, bound to
-  method + full URL + body hash, single-use — every dangerous action
-  becomes one hardware-wallet confirmation bound to exactly the bytes
-  that execute.
+  method + full URL + body hash + a human-readable summary the server
+  recomputes and verifies, single-use — every dangerous action becomes
+  one hardware-wallet confirmation that shows the action and binds the
+  bytes.
 
 Database compromise yields nothing. Server compromise yields nothing an
 attacker can present. RPC compromise alone yields nothing. Access reduces
@@ -53,9 +54,9 @@ anvil &          # local chain
 npm run demo     # deploy, enroll, authenticate, full rejection matrix
 ```
 
-The demo exercises the whole pattern end to end as a 39-check acceptance
+The demo exercises the whole pattern end to end as a 43-check acceptance
 and rejection matrix: domain, chain, and purpose binding; expiry and
-freshness; method, full-URL, and body binding; raw-body
+freshness; method, full-URL, body, and summary binding; raw-body
 capture; nonce capacity; a lying registry; construction guards; and
 instant session revocation. The same matrix runs in CI on every push.
 
@@ -71,12 +72,16 @@ const config = {
   predicate: makeViemPredicate(publicClient, REGISTRY_ADDRESS),
   deriveIdentity: (a) => deriveIdentityLocal(a, 'YOUR_FORK_SALT', chainId),
   allowlist: ADMIN_IDENTITY_IDS,                // authorization data, not a secret
+  summaryOf: (req) => `withdraw ${req.body.amount} ${req.body.token} to ${req.body.to}`,
 };
 
 app.get('/admin/stats',  rateLimiter, sbaSessionAuth(config), handler);
 app.post('/admin/action', rateLimiter, sbaRequestAuth(config), handler);
 ```
 
+The client signs the same summary string; the signer's device shows it;
+the server recomputes it from the request it executes and denies on any
+difference.
 ## Deployment model
 
 Enrollment is identity proofing and credential registration in one
@@ -88,8 +93,9 @@ independently auditable roster.
 Day-to-day operation maps to familiar enterprise controls, minus the
 credential store. Session establishment is one wallet signature with a
 bounded TTL, instantly revocable. Privileged mutations are step-up
-authorization: one hardware-confirmed signature per action, bound to
-exactly what executes. There is no password lifecycle, no MFA reset
+authorization: one hardware-confirmed signature per action, showing a
+summary the server verifies against exactly what executes. There is no
+password lifecycle, no MFA reset
 desk, and no server-side credential to steal or rotate. Deprovisioning
 is a one-line allowlist change; database, backend, or RPC compromise
 mints no access, because nothing the server stores can sign.
@@ -97,8 +103,9 @@ mints no access, because nothing the server stores can sign.
 ## Operating envelope
 
 - **Floor: signer custody.** All secrecy concentrates in the operator
-  keys. Key custody, operator phishing discipline, and a
-  re-enrollment plan for lost keys are deployment responsibilities; no
+  keys. Key custody, operator phishing discipline, a device that renders
+  EIP-712 fields (so the request summary is seen, not only signed), and
+  a re-enrollment plan for lost keys are deployment responsibilities; no
   configuration compensates for them.
 - **Ceiling: population and availability.** Built for the small
   privileged population that touches funds or production, not
@@ -122,7 +129,7 @@ its severity, what we did about it, and where we were wrong.
 | --- | --- | --- |
 | [2026-10-11](audits/2026-10-11-internal-adversarial-review.md) | Internal adversarial review, pre-publication | 1 Medium (nonce consumed before verification), fixed in the same revision |
 | [2026-10-13](audits/2026-10-13-zero-semantics-hardening.md) | Internal review against the zero-semantics class | 2 Low hardened: unconditional zero-identity rejection, loud construction-time config validation |
-| [2026-10-16](audits/2026-10-16-external-adversarial-review.md) | **External adversarial review by Gakarot**, harness-verified ([PDF](audits/2026-10-16-external-adversarial-review.pdf)) | 13 findings and 3 notes, all reproduced (20/20 on the reviewer's harness): 1 High claim, 5 Medium, 6 Low, 1 Informational. Documents corrected, implementation fixes shipped as v1.1, rejection matrix extended from 8 to 39 checks and moved into CI; one false statement in our own 2026-10-11 review corrected in place |
+| [2026-10-16](audits/2026-10-16-external-adversarial-review.md) | **External adversarial review by Gakarot**, harness-verified ([PDF](audits/2026-10-16-external-adversarial-review.pdf)) | 13 findings and 3 notes, all reproduced (20/20 on the reviewer's harness): 1 High claim, 5 Medium, 6 Low, 1 Informational. Documents corrected, implementation fixes shipped as v1.1 (envelope format 2), rejection matrix extended from 8 to 43 checks and moved into CI; one false statement in our own 2026-10-11 review corrected in place |
 
 The standard we hold ourselves to: findings are published with
 severity and reasoning, fixes ship in the open, claims that turn out to

@@ -1,6 +1,7 @@
 # SBA-Auth Specification
 
-Wallet-native authentication with no stored credentials. Version 1.1.
+Wallet-native authentication with no stored credentials. Version 1.1
+(envelope format 2).
 
 ## 1. Design goal
 
@@ -71,14 +72,16 @@ the middle.
 **Request mode**
 
 1. The `x-sba-request` envelope is present, decodes, and carries string
-   `purpose`, `method`, `path`, `bodyHash`, `nonce`, and `issuedAt`.
+   `purpose`, `method`, `path`, `bodyHash`, `summary`, `nonce`, and
+   `issuedAt`.
 2. `purpose` equals the deployment's configured purpose string.
 3. Action binding: `method` equals the request method; `path` equals
    the full original URL as requested, mount prefix and query string
    included, byte for byte (default extractor `req.originalUrl`); the
    raw body bytes were captured (a request that carries a body without a
    captured raw body is denied, never read as empty) and `bodyHash`
-   equals their keccak256.
+   equals their keccak256; `summary` is non-empty and equals the string
+   the deployment's `summaryOf` recomputes from the parsed request.
 4. `issuedAt` parses, is no more than 60 seconds in the future, and is
    no older than `requestMaxAgeMs` (default 90 seconds).
 5. The signer's address is recovered from the EIP-712 signature over
@@ -128,16 +131,23 @@ Use for reads and low-stakes surfaces. Deployments that cannot tolerate
 any bearer window use request mode exclusively.
 
 **Request mode.** Every call carries its own signature over
-`{purpose, method, path, bodyHash, nonce, issuedAt}`:
+`{purpose, method, path, bodyHash, summary, nonce, issuedAt}`:
 
 - `bodyHash` is a keccak256 over the exact raw body bytes. The signature
   is a commitment to exactly the bytes that execute: any change to the
   body after signing, in transit or at the browser, changes the hash and
-  fails the action-binding check (section 3, request step 3). The
-  signer's device displays `method` and `path` in clear and the body as
-  a hash, not as fields; a front end that composes a malicious body
-  *before* requesting the signature is not detected by the hash. That
-  case is the signer-endpoint residual in section 6.
+  fails the action-binding check (section 3, request step 3).
+- `summary` is the human-readable description of the action. The client
+  puts it in the typed data, so the signer's device displays it in
+  clear; the server recomputes it from the request it is about to
+  execute (`summaryOf`, deployment-defined, for example
+  `"withdraw 1000 USDC to 0xabc…"` from the parsed body) and denies on
+  any difference. The text the signer read is therefore proven to
+  describe the bytes that run. A compromised front end can still
+  compose a malicious action before asking for the signature; what it
+  cannot do is show one action and execute another. The signer reading
+  the summary is the control; that is the signer-endpoint residual in
+  section 6.
 - `path` is the full original URL, mount prefix and query string
   included, so no parameter travels outside the signature.
 - `nonce` is single-use (server-side TTL cache, per process, fail-closed
@@ -145,8 +155,34 @@ any bearer window use request mode exclusively.
   nothing.
 - `issuedAt` bounds signature age (default 90 seconds).
 
-One dangerous action equals one hardware confirmation bound to exactly
-those bytes. This is the recommended mode for every mutation.
+One dangerous action equals one hardware confirmation that shows the
+action and binds the bytes. This is the recommended mode for every
+mutation.
+
+**Design rules for the summary.** The gate enforces that a summary is
+present and that client and server agree on it; what it proves depends
+on how the deployment writes `summaryOf`.
+
+- It MUST be a pure function of the signed request (path and body),
+  never of server state, headers, clocks, or prices. A summary that
+  reads anything else can be true at signing and false at execution, or
+  deny legitimate requests.
+- One implementation, imported by both client and server. Two
+  implementations drift on decimals, checksum casing, or field order,
+  and every drift is a bare 403 under the identical-denial rule.
+- Decode once. Parse the body into a typed action, render the summary
+  from that action, and execute from the same action. If the summary
+  reads one field and the handler another, the device shows one thing
+  and the server does another, past a gate that is satisfied.
+- Presence is enforced, quality is not. A constant summary passes and
+  buys nothing. Write the fields a human would need in order to refuse:
+  direction, amount, asset, counterparty.
+- Keep it short and plain. Wallets that render EIP-712 fields (browser
+  wallets, Trezor) show it directly; Ledger shows domain and message
+  hashes unless the message is clear-signed through a registered
+  descriptor or blind signing is enabled. Until a deployment registers
+  a descriptor, the summary is bound but not displayed on that device.
+  Say so in your operator guidance.
 
 ## 5. The layer model
 
@@ -175,7 +211,8 @@ privilege escalation, silent authority transfer to a new key.
 **Mitigated by construction:** cross-deployment signature reuse (the
 bound domain: a signature for one registry verifies nowhere else);
 replay (request-mode nonces, per instance; session revocation, per
-instance); post-signing action tampering (body hash, full URL); registry
+instance); post-signing action tampering (body hash, full URL);
+display-versus-execution divergence (server-verified summary); registry
 equivocation (mandatory local derivation check); registry outage
 (fail-closed).
 
@@ -186,7 +223,8 @@ deployment's registry address, purpose string, and routes (all public
 for an open deployment) can ask an enrolled signer to sign a valid
 envelope for that deployment. The bound domain does not defend against
 this. Request mode bounds both cases to one signed action per
-confirmation; session mode bounds them to the window and the revocation
+confirmation, described truthfully on the device by the verified
+summary; session mode bounds them to the window and the revocation
 latency; network posture (section below) bounds who can present an
 envelope at all. No authentication protocol survives the signer itself;
 the pattern's job is to ensure the signer is the *only* thing that must
@@ -217,14 +255,15 @@ joined to chain identities.
 - `contracts/interfaces/ISBAIdentity.sol` — the minimal predicate surface
   (MIT-licensed): `hasIdentity`, `identityOf`.
 - `server/sba-auth.ts` — both modes for Express + viem, pluggable
-  predicate, mandatory local derivation check, fail-closed timeouts and raw-body handling, session
+  predicate, mandatory local derivation check, server-verified request
+  summary, fail-closed timeouts and raw-body handling, session
   revocation, single-use request nonces.
 - `client/sba-client.ts` — envelope construction and signing for any viem
   wallet client.
 - `example/` — a runnable end-to-end demonstration against a local anvil
-  node: deploy, enroll, authorize, and a 39-check acceptance and
+  node: deploy, enroll, authorize, and a 43-check acceptance and
   rejection matrix covering every claim in this document (domain, chain,
-  purpose, expiry, freshness, method, full URL, body, raw-body
+  purpose, expiry, freshness, method, full URL, body, summary, raw-body
   capture, nonce capacity, lying registry, construction guards,
   revocation). `npm run demo`; also run in CI on every push.
 

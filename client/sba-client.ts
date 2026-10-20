@@ -6,7 +6,8 @@
  *
  * Session mode: one signature, reusable until expiry, revocable
  * server-side by its nonce. Request mode: one signature per action,
- * bound to method + full URL + body bytes, single-use.
+ * bound to method + full URL + body bytes + a human-readable summary the
+ * server recomputes and verifies, single-use.
  */
 
 import { keccak256, toBytes, type Address, type Hex } from 'viem';
@@ -28,7 +29,7 @@ export interface SbaClientConfig {
 
 const DEFAULTS = {
   domainName: 'SBA Auth',
-  domainVersion: '1',
+  domainVersion: '2',
   sessionWindowMs: 60 * 60 * 1000,
 };
 
@@ -46,6 +47,7 @@ const REQUEST_TYPES = {
     { name: 'method', type: 'string' },
     { name: 'path', type: 'string' },
     { name: 'bodyHash', type: 'string' },
+    { name: 'summary', type: 'string' },
     { name: 'nonce', type: 'string' },
     { name: 'issuedAt', type: 'string' },
   ],
@@ -117,23 +119,27 @@ export async function signSession(
 }
 
 /** Sign one request: header value for `x-sba-request`, bound to this
- *  exact method, full URL, and body bytes; single-use and short-lived.
- *  `path` is the full path as the server will see it in
+ *  exact method, full URL, body bytes, and summary; single-use and
+ *  short-lived. `path` is the full path as the server will see it in
  *  `req.originalUrl`: mount prefix and query string included. Send the
  *  SAME body string you pass here; any difference in bytes changes the
- *  hash and the server denies. One dangerous action, one signature, one
- *  hardware confirmation. */
+ *  hash and the server denies. `summary` is the human-readable
+ *  description of the action the wallet displays; the server recomputes
+ *  it from the request it executes and denies on any difference, so the
+ *  text the signer read is what runs. One dangerous action, one
+ *  signature, one hardware confirmation. */
 export async function signRequest(
   walletClient: TypedDataSigner,
   account: unknown,
   config: SbaClientConfig,
-  request: { method: string; path: string; body?: string },
+  request: { method: string; path: string; body?: string; summary: string },
 ): Promise<{ header: string; nonce: string }> {
   const payload = {
     purpose: config.purpose,
     method: request.method.toUpperCase(),
     path: request.path,
     bodyHash: bodyHashOf(request.body ?? ''),
+    summary: request.summary,
     nonce: randomNonce(),
     issuedAt: new Date().toISOString(),
   };

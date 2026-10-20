@@ -11,9 +11,12 @@
  *   can be revoked server-side instantly (`.revoke(nonce)`). Use for reads
  *   and low-stakes surfaces.
  * - Request mode (`sbaRequestAuth`): every request carries its own
- *   signature over (method, path, bodyHash, nonce, issuedAt). Nonces are
- *   single-use and the signature binds to the exact action: method and
- *   full URL in clear, the body as a hash. Use for mutations.
+ *   signature over (method, path, bodyHash, summary, nonce, issuedAt).
+ *   Nonces are single-use and the signature binds to the exact action:
+ *   method and full URL in clear, the body as a hash, and a human-readable
+ *   `summary` of the action that the server recomputes from the request
+ *   and compares, so the signer's device shows the action and the server
+ *   proves the shown text matches the bytes. Use for mutations.
  *
  * Both modes run the same identity gauntlet after signature recovery:
  * live identity lookup through a pluggable predicate (fail-closed on
@@ -101,6 +104,11 @@ export interface SbaConfig {
    *  full path as requested including any mount prefix and query string.
    *  The client signs exactly this string. */
   pathOf?: (req: Request) => string;
+  /** Request mode, REQUIRED: recompute the human-readable summary of
+   *  the action from the parsed request (for example from `req.body`).
+   *  The signed `summary` must equal it exactly and must be non-empty,
+   *  so what the signer's device displayed is what the server executes. */
+  summaryOf?: (req: Request) => string;
 }
 
 export interface SbaAuthContext {
@@ -129,7 +137,9 @@ export interface SessionAuthHandler extends RequestHandler {
 
 export const SBA_DEFAULTS = {
   domainName: 'SBA Auth',
-  domainVersion: '1',
+  /** Envelope format version. '2' added `summary` to SbaRequest and
+   *  removed the default purpose; v1 envelopes do not verify. */
+  domainVersion: '2',
   sessionWindowMs: 60 * 60 * 1000,
   requestMaxAgeMs: 90 * 1000,
   rpcTimeoutMs: 3000,
@@ -152,6 +162,7 @@ export const SBA_REQUEST_TYPES = {
     { name: 'method', type: 'string' },
     { name: 'path', type: 'string' },
     { name: 'bodyHash', type: 'string' },
+    { name: 'summary', type: 'string' },
     { name: 'nonce', type: 'string' },
     { name: 'issuedAt', type: 'string' },
   ],
@@ -458,19 +469,24 @@ function defaultRawBodyOf(req: Request): string | undefined {
 
 /**
  * Request-mode middleware: every call carries its own EIP-712 signature
- * over `{purpose, method, path, bodyHash, nonce, issuedAt}`.
+ * over `{purpose, method, path, bodyHash, summary, nonce, issuedAt}`.
  * The signature binds to the exact action: `method` must match the
  * request, `path` must equal the full original URL (mount prefix and
  * query string included, exact bytes), `bodyHash` must equal keccak256
  * of the raw body bytes received (captured via `rawBodyOf`; see the file
  * header for the express.json verify hook; a body without a capture is
- * denied), `issuedAt` bounds age to `requestMaxAgeMs`,
+ * denied), `summary` must equal the string `summaryOf(req)` recomputes
+ * from the parsed request, `issuedAt` bounds age to `requestMaxAgeMs`,
  * and the nonce is single-use, so a captured envelope replays as a 403.
  *
  * This is the recommended mode for every mutation: one dangerous action
- * equals one hardware confirmation bound to exactly the bytes that
- * execute. The device shows `method` and `path` in clear and the body as
- * a hash.
+ * equals one hardware confirmation. The device shows `method`, `path`,
+ * and `summary` in clear and the body as a hash; because the server
+ * recomputes `summary` from the bytes it executes, the text the signer
+ * read is proven to describe the action that runs. A front end can
+ * still compose a malicious action before asking for the signature; the
+ * signer then sees it described truthfully. What it cannot do is show
+ * one action and execute another.
  *
  * Nonce single-use is enforced in-process (`NonceCache`, fail-closed at
  * capacity); state does not span replicas or survive a restart (SPEC.md
@@ -479,6 +495,10 @@ function defaultRawBodyOf(req: Request): string | undefined {
  */
 export function sbaRequestAuth(config: SbaConfig): RequestHandler {
   assertConfig(config);
+  if (typeof config.summaryOf !== 'function') {
+    throw new Error('sba-auth: summaryOf is required in request mode (the signer must see what executes)');
+  }
+  const summaryOf = config.summaryOf;
   const domain = {
     name: config.domainName ?? SBA_DEFAULTS.domainName,
     version: config.domainVersion ?? SBA_DEFAULTS.domainVersion,
@@ -506,18 +526,21 @@ export function sbaRequestAuth(config: SbaConfig): RequestHandler {
         typeof payload.method !== 'string' ||
         typeof payload.path !== 'string' ||
         typeof payload.bodyHash !== 'string' ||
+        typeof payload.summary !== 'string' ||
         typeof payload.nonce !== 'string' ||
         typeof payload.issuedAt !== 'string'
       ) return deny(res);
       if (payload.purpose !== purpose) return deny(res);
 
       // The signature binds to the exact action: method, full URL, body
-      // bytes.
+      // bytes, and the summary the signer read.
       if (payload.method !== req.method) return deny(res);
       if (payload.path !== pathOf(req)) return deny(res);
       const rawBody = rawBodyOf(req);
       if (rawBody === undefined) return deny(res);
       if (payload.bodyHash.toLowerCase() !== bodyHashOf(rawBody).toLowerCase()) return deny(res);
+      if (payload.summary.length === 0) return deny(res);
+      if (payload.summary !== summaryOf(req)) return deny(res);
 
       const issuedAtMs = Date.parse(payload.issuedAt);
       if (!Number.isFinite(issuedAtMs)) return deny(res);

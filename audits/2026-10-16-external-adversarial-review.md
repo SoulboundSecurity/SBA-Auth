@@ -26,7 +26,7 @@ in parentheses.
 
 **Status.** Documents were corrected in the revision that added this
 entry. The implementation changes shipped in the next revision as
-**v1.1**; the "Fixed in v1.1" section below records
+**v1.1 (envelope format 2)**; the "Fixed in v1.1" section below records
 them and the reviewer's harness result against the fixed code.
 
 ---
@@ -55,7 +55,7 @@ them and the reviewer's harness result against the fixed code.
 ## Fixed in v1.1
 
 Shipped in the revision following this entry, verified by strict
-typecheck and the extended end-to-end matrix (39 of 39 against a local
+typecheck and the extended end-to-end matrix (43 of 43 against a local
 chain), and by re-running the reviewer's own harness against the fixed
 code with only its configuration adapted to the new required fields:
 **10 of its 20 checks now report the fixed behaviour**, exactly the
@@ -73,11 +73,18 @@ bounds are as documented (V-12).
   exposes a mounted route to prove it.
 - **V-03:** `deriveIdentity` is required; construction throws without
   it; the derivation check runs unconditionally.
-- **V-04:** documents were corrected in the prior revision. The
-  implementation half, a server-verified human-readable `summary` field
-  in the request struct, is a feature in its own right and ships as its
-  own commit immediately after this one; this entry records it when it
-  lands.
+- **V-04:** shipped as its own feature commit, after the fixes above.
+  `SbaRequest` gains a `summary` field. The client signs a
+  human-readable description of the action; the server recomputes it
+  from the parsed request through the required `summaryOf` and denies on
+  any difference or on an empty summary. The signer's device now shows
+  the action, and the server proves the shown text matches the bytes it
+  executes. Struct change; `domainVersion` default moves to `2`, so v1
+  envelopes fail loudly. Limits stated in SPEC 4: the summary must be a
+  pure function of the signed body, shared by both sides, rendered and
+  executed from one decoded action; presence is enforced, quality is
+  not; and a device that renders only hashes binds it without showing
+  it.
 - **V-05:** `nonceCacheMax` must be a positive integer (construction
   throws otherwise). At capacity the cache evicts expired entries only
   and refuses the request if still full of live nonces: capacity is a
@@ -87,7 +94,7 @@ bounds are as documented (V-12).
   capture exists and the request carries a body (Content-Length or
   Transfer-Encoding), and `undefined` denies. A bodyless request still
   hashes the empty string, so bodyless routes keep working.
-- **N-3:** the demo matrix grows from 8 to 39 checks, covering every
+- **N-3:** the demo matrix grows from 8 to 43 checks, covering every
   case the reviewer listed as unexercised (wrong chain, wrong
   `verifyingContract`, wrong purpose, expired session, stale and future
   `issuedAt`, method and path mismatch, enrolled-but-not-allowlisted key,

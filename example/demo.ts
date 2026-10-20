@@ -18,7 +18,7 @@ import express from 'express';
 import { createPublicClient, createWalletClient, http, keccak256, toBytes, zeroHash, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { foundry } from 'viem/chains';
-import { createApp, EXAMPLE_PURPOSE } from './server.js';
+import { createApp, EXAMPLE_PURPOSE, summarize } from './server.js';
 import { signSession, signRequest, bodyHashOf } from '../client/sba-client.js';
 import {
   sbaSessionAuth,
@@ -143,38 +143,46 @@ async function main() {
   check('session: expired validUntil is denied, no grace (SPEC 9)', await get('/admin/status', expired) === 403);
   const tooLong = await rawSession({ purpose: EXAMPLE_PURPOSE, nonce: nonce(), validUntil: new Date(Date.now() + SBA_DEFAULTS.sessionWindowMs + 120_000).toISOString() });
   check('session: validUntil beyond window + 60 s is denied (SPEC 9)', await get('/admin/status', tooLong) === 403);
+  const v1Domain = await rawSession({ purpose: EXAMPLE_PURPOSE, nonce: nonce(), validUntil: new Date(Date.now() + 60_000).toISOString() }, { ...domain, version: '1' });
+  check('session: a v1-format envelope does not verify against the v2 domain', await get('/admin/status', v1Domain) === 403);
 
   // ═══ Request mode ═══════════════════════════════════════════════════
   const body = JSON.stringify({ action: 'rotate-keys' });
-  const signed = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/action', body });
-  check('request: per-action signature is authorized', await post('/admin/action', signed.header, body) === 200);
+  const summary = summarize(JSON.parse(body));
+  const signed = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/action', body, summary });
+  check('request: per-action signature with matching summary is authorized', await post('/admin/action', signed.header, body) === 200);
   check('request: replaying the same envelope is denied (single-use nonce)', await post('/admin/action', signed.header, body) === 403);
 
-  const signed2 = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/action', body });
+  const signed2 = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/action', body, summary });
   const tampered = JSON.stringify({ action: 'drain-wallet' });
   check('request: body tampered after signing is denied (bodyHash)', await post('/admin/action', signed2.header, tampered) === 403);
   check('sanity: tampered body hash differs', bodyHashOf(body) !== bodyHashOf(tampered));
 
-  const wrongMethod = await signRequest(adminWallet, admin, cfg, { method: 'PUT', path: '/admin/action', body });
+  const lyingSummary = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/action', body: tampered, summary: summarize({ action: 'rotate-keys' }) });
+  check('request: summary that does not describe the body is denied (V-04: the signer sees what executes)', await post('/admin/action', lyingSummary.header, tampered) === 403);
+  const emptySummary = await rawRequest({ purpose: EXAMPLE_PURPOSE, method: 'POST', path: '/admin/action', bodyHash: bodyHashOf(body), summary: '', nonce: nonce(), issuedAt: new Date().toISOString() });
+  check('request: empty summary is denied (absence never passes a gate)', await post('/admin/action', emptySummary, body) === 403);
+
+  const wrongMethod = await signRequest(adminWallet, admin, cfg, { method: 'PUT', path: '/admin/action', body, summary });
   check('request: method mismatch is denied', await post('/admin/action', wrongMethod.header, body) === 403);
-  const wrongPath = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/other', body });
+  const wrongPath = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/other', body, summary });
   check('request: path mismatch is denied', await post('/admin/action', wrongPath.header, body) === 403);
-  const noQuery = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/action', body });
+  const noQuery = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/action', body, summary });
   check('request: unsigned query string is denied (V-02: the full URL is bound)', await post('/admin/action?to=attacker&amount=1000000', noQuery.header, body) === 403);
-  const withQuery = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/action?dry=1', body });
+  const withQuery = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/action?dry=1', body, summary });
   check('request: signed query string is accepted exactly as signed', await post('/admin/action?dry=1', withQuery.header, body) === 200);
-  const mountedFull = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/console/action', body });
+  const mountedFull = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/console/action', body, summary });
   check('request: mounted router, signature over the full original URL is accepted (V-02)', await post('/console/action', mountedFull.header, body) === 200);
-  const mountedBare = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/action', body });
+  const mountedBare = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/action', body, summary });
   check('request: mounted router, signature over the mount-relative path is denied (V-02)', await post('/console/action', mountedBare.header, body) === 403);
 
-  const stale = await rawRequest({ purpose: EXAMPLE_PURPOSE, method: 'POST', path: '/admin/action', bodyHash: bodyHashOf(body), nonce: nonce(), issuedAt: new Date(Date.now() - 120_000).toISOString() });
+  const stale = await rawRequest({ purpose: EXAMPLE_PURPOSE, method: 'POST', path: '/admin/action', bodyHash: bodyHashOf(body), summary, nonce: nonce(), issuedAt: new Date(Date.now() - 120_000).toISOString() });
   check('request: issuedAt older than requestMaxAgeMs is denied (SPEC 9)', await post('/admin/action', stale, body) === 403);
-  const future = await rawRequest({ purpose: EXAMPLE_PURPOSE, method: 'POST', path: '/admin/action', bodyHash: bodyHashOf(body), nonce: nonce(), issuedAt: new Date(Date.now() + 120_000).toISOString() });
+  const future = await rawRequest({ purpose: EXAMPLE_PURPOSE, method: 'POST', path: '/admin/action', bodyHash: bodyHashOf(body), summary, nonce: nonce(), issuedAt: new Date(Date.now() + 120_000).toISOString() });
   check('request: issuedAt more than 60 s in the future is denied (SPEC 9)', await post('/admin/action', future, body) === 403);
-  const wrongPurposeReq = await signRequest(adminWallet, admin, { ...cfg, purpose: 'Some Other Service' }, { method: 'POST', path: '/admin/action', body });
+  const wrongPurposeReq = await signRequest(adminWallet, admin, { ...cfg, purpose: 'Some Other Service' }, { method: 'POST', path: '/admin/action', body, summary });
   check('request: wrong purpose is denied (V-01)', await post('/admin/action', wrongPurposeReq.header, body) === 403);
-  const strangerReq = await signRequest(strangerWallet, stranger, cfg, { method: 'POST', path: '/admin/action', body });
+  const strangerReq = await signRequest(strangerWallet, stranger, cfg, { method: 'POST', path: '/admin/action', body, summary });
   check('request: enrolled but not allowlisted key is denied', await post('/admin/action', strangerReq.header, body) === 403);
 
   // ═══ Raw-body capture (V-09) ════════════════════════════════════════
@@ -183,11 +191,11 @@ async function main() {
     const srv = await listen(noCapture.app);
     const post2 = (header: string, body?: string) =>
       fetch(`${srv.base}/admin/action`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-sba-request': header }, body }).then((r) => r.status);
-    const emptySig = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/action', body: '' });
+    const emptySig = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/action', body: '', summary: summarize({}) });
     check('request: no raw-body capture, empty-body signature, attacker body is denied (V-09)', await post2(emptySig.header, '{"action":"drain-wallet"}') === 403);
-    const emptySig2 = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/action', body: '' });
+    const emptySig2 = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/action', body: '', summary: summarize({}) });
     check('request: no raw-body capture, bodyless request with empty-body signature is accepted', await post2(emptySig2.header, undefined) === 200);
-    const nonEmptySig = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/action', body });
+    const nonEmptySig = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/action', body, summary });
     check('request: no raw-body capture, signature over a body carried in the request is denied', await post2(nonEmptySig.header, body) === 403);
     srv.close();
   }
@@ -198,9 +206,9 @@ async function main() {
     const srv = await listen(tiny.app);
     const post3 = (header: string) =>
       fetch(`${srv.base}/admin/action`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-sba-request': header }, body }).then((r) => r.status);
-    const first = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/action', body });
-    const second = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/action', body });
-    const third = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/action', body });
+    const first = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/action', body, summary });
+    const second = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/action', body, summary });
+    const third = await signRequest(adminWallet, admin, cfg, { method: 'POST', path: '/admin/action', body, summary });
     const results = [await post3(first.header), await post3(second.header), await post3(third.header)];
     check('request: nonceCacheMax 2, third live request is refused rather than evicting a live nonce (V-05)', JSON.stringify(results) === JSON.stringify([200, 200, 403]));
     check('request: the first nonce is still single-use after the refusal', await post3(first.header) === 403);
@@ -229,12 +237,14 @@ async function main() {
     predicate: async () => null,
     deriveIdentity: (a: Address) => deriveIdentityLocal(a, 'SBA_SALT_V1', chainId),
     allowlist: [identityId],
+    summaryOf: () => 'x',
   };
   check('construct: missing purpose throws (V-01)', throws(() => sbaSessionAuth({ ...good, purpose: '' })));
   check('construct: missing deriveIdentity throws (V-03)', throws(() => sbaSessionAuth({ ...good, deriveIdentity: undefined as never })));
   check('construct: nonceCacheMax 0 throws (V-05)', throws(() => sbaRequestAuth({ ...good, nonceCacheMax: 0 })));
   check('construct: nonceCacheMax -1 throws (V-05)', throws(() => sbaRequestAuth({ ...good, nonceCacheMax: -1 })));
   check('construct: nonceCacheMax NaN throws (V-05)', throws(() => sbaRequestAuth({ ...good, nonceCacheMax: NaN })));
+  check('construct: request mode without summaryOf throws (V-04)', throws(() => sbaRequestAuth({ ...good, summaryOf: undefined })));
   check('construct: zero verifyingContract throws (zero-semantics)', throws(() => sbaSessionAuth({ ...good, verifyingContract: '0x0000000000000000000000000000000000000000' })));
   check('construct: zero identity in allowlist throws (zero-semantics)', throws(() => sbaSessionAuth({ ...good, allowlist: [zeroHash] })));
   check('construct: a well-formed config constructs', !throws(() => sbaSessionAuth(good)) && !throws(() => sbaRequestAuth(good)));

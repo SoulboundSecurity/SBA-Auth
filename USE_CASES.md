@@ -15,9 +15,10 @@ Terms used throughout:
 - **Session mode** — one wallet signature authorizes requests for a bounded
   window (default 1h); revocable server-side at any instant by its nonce.
 - **Request mode** — every call carries its own signature bound to method,
-  full URL, and body hash; single-use, non-replayable. One dangerous
-  action = one hardware confirmation bound to exactly the bytes that
-  execute.
+  full URL, body hash, and a human-readable summary the server recomputes
+  from the request and verifies; single-use, non-replayable. One
+  dangerous action = one hardware confirmation that shows the action and
+  binds the bytes.
 
 ---
 
@@ -39,8 +40,9 @@ the audit trail is whatever the ticketing system remembers.
   is the roster of who could ever be authorized.
 - Mode: request mode for everything that moves value or changes limits
   (each withdrawal approval, limit change, or address-list edit is one
-  hardware-wallet confirmation bound to exactly the bytes submitted);
-  session mode for dashboards.
+  hardware-wallet confirmation showing a summary the server verifies
+  against the submitted bytes, "withdraw 250000 USDC to 0x…"); session
+  mode for dashboards.
 - Allowlist: per-console configuration pinning enrolled identity values.
   This is the record of who is authorized now; keep it under change
   control, because grants and removals within the enrolled set emit no
@@ -81,10 +83,12 @@ and admin panels authenticated by the weakest laptop in the office.
 
 **With SBA-Auth:** each approver enrolls once (approval-gated, co-signed by
 the compliance function); every approval is a request-mode signature whose
-body hash covers the exact disbursement payload. The approval artifact is
-cryptographic and attributable: the signed envelope, the raw request
-body, and the on-chain enrollment together prove *which enrolled
-identity signed exactly which bytes*. The application must retain all
+body hash covers the exact disbursement payload and whose summary, shown
+on the approver's device, is recomputed by the server from that payload.
+The approval artifact is cryptographic and attributable: the signed
+envelope, the raw request body, and the on-chain enrollment together
+prove *which enrolled identity signed exactly which bytes, described by
+exactly which words*. The application must retain all
 three; the middleware verifies and attaches the result to the request,
 it does not persist it. The signed `issuedAt` is asserted by the signer;
 the server's receipt time is the attested time of approval.
@@ -150,7 +154,8 @@ everything else: this pattern deliberately does not replace workforce SSO.
 | Enrollment policy | Open mint + allowlist, or approval-co-signed mint | Open is honest when the allowlist is the real gate (small teams). Approval-gated when enrollment itself must encode process (KYC, HR, dual sign-off) |
 | Mode per surface | Session / request | Reads: session. Anything that moves value, changes limits, or alters authorization: request mode, no exceptions |
 | Allowlist custody | Deployment config | Treat as authorization data, not secret; changes should require deployment-level access and leave a change trail |
-| Signer custody | Hardware wallet per operator, dedicated to this role | The signer key is the only secret in the system; give it the custody that fact deserves |
+| Signer custody | Hardware wallet per operator, dedicated to this role | The signer key is the only secret in the system; give it the custody that fact deserves. Confirm the device renders EIP-712 fields for your typed data (Ledger needs a registered clear-signing descriptor), or the request summary is bound but not shown |
+| Summary function | One shared `summaryOf`, pure over the signed body | Decode the body once into a typed action; render the summary and execute from the same object. Include direction, amount, asset, counterparty. See SPEC 4 |
 | Network posture | IP-fenced front end for high-value deployments | Defense in depth; bounds unauthenticated probing without touching the auth path |
 
 ## What not to use this for

@@ -2,9 +2,10 @@
 /**
  * Minimal SBA-Auth example server. Reads are session-gated; mutations
  * are request-gated: each call needs its own wallet signature bound to
- * method + full URL + body bytes. The same mutation is exposed twice, at
- * the root and under a mounted router, to show that the signed path is
- * the full original URL. Run end-to-end via `npm run demo`.
+ * method + full URL + body bytes + a server-verified summary. The same
+ * mutation is exposed twice, at the root and under a mounted router, to
+ * show that the signed path is the full original URL. Run end-to-end via
+ * `npm run demo`.
  */
 
 import express from 'express';
@@ -31,6 +32,13 @@ export interface ExampleServerOptions {
   nonceCacheMax?: number;
 }
 
+/** The human-readable summary the signer sees and the server re-derives
+ *  from the parsed body. Deployments write one per action shape. */
+export function summarize(body: unknown): string {
+  const action = body && typeof body === 'object' ? (body as { action?: unknown }).action : undefined;
+  return `action: ${typeof action === 'string' ? action : 'none'}`;
+}
+
 export function createApp(options: ExampleServerOptions) {
   const client = createPublicClient({ transport: http(options.rpcUrl) });
   const salt = options.salt ?? 'SBA_SALT_V1';
@@ -42,6 +50,7 @@ export function createApp(options: ExampleServerOptions) {
     predicate: makeViemPredicate(client, options.registry),
     deriveIdentity: (address) => deriveIdentityLocal(address, salt, options.chainId),
     allowlist: options.allowlist,
+    summaryOf: (req) => summarize(req.body),
     nonceCacheMax: options.nonceCacheMax,
   };
 
