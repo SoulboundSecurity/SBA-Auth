@@ -291,3 +291,29 @@ which this repo's contracts follow.
   grace) and up to 60 seconds in the future. Session mode rejects an
   expired `validUntil` with no grace and accepts a `validUntil` up to
   the session window plus 60 seconds ahead.
+
+## 10. Changelog
+
+**1.1 (2026-10-20), envelope format 2.** Signer transparency: the
+request typed data gains a `summary` field, so the EIP-712 confirmation
+on the signer's device reads the action in words ("withdraw 250000 USDC
+to 0x…") instead of a body hash, and the server recomputes the summary
+from the request it executes and denies on any difference. What the
+signer reads is proven to be what runs (section 4, including the design
+rules and the device-rendering limit). Also in 1.1, from the 2026-10-16
+security audit: `purpose` is required with no default and is the
+audience the signer sees; `deriveIdentity` is required, so registry
+equivocation is defeated by construction; the full original URL is
+signed, query string and mount prefix included; a request carrying a
+body without raw-body capture is denied; nonce cache capacity is
+validated and fail-closed; the gauntlet is documented per mode in
+execution order; timestamp bounds are stated as implemented; roster,
+audit-trail, and dual-control claims are scoped to what the code does.
+Demo matrix 8 to 43 checks, run in CI. v1 envelopes do not verify
+against the format-2 domain.
+
+**1.0 (2026-10-11).** First release: enrollment/authentication split,
+session and request modes, pluggable predicate, local derivation check,
+fail-closed timeouts, session revocation, single-use request nonces.
+Pre-publication adversarial review by engineering (one Medium fixed in
+the same revision) and zero-semantics hardening (2026-10-13).

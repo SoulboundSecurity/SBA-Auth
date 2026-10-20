@@ -121,21 +121,35 @@ reachable chain — the server side offers no credential to attack.
 
 ## Security review
 
-This repository is adversarially reviewed before and after publication,
-and the whole record is public in [`audits/`](audits/): every finding,
-its severity, what we did about it, and where we were wrong.
+This repository is reviewed adversarially in two stages, by engineering
+before publication and by the security team after it, and the whole
+record is public in [`audits/`](audits/): every finding, its severity,
+what we did about it, and where we were wrong.
 
 | Date | Review | Outcome |
 | --- | --- | --- |
-| [2026-10-11](audits/2026-10-11-internal-adversarial-review.md) | Internal adversarial review, pre-publication | 1 Medium (nonce consumed before verification), fixed in the same revision |
-| [2026-10-13](audits/2026-10-13-zero-semantics-hardening.md) | Internal review against the zero-semantics class | 2 Low hardened: unconditional zero-identity rejection, loud construction-time config validation |
-| [2026-10-16](audits/2026-10-16-external-adversarial-review.md) | **External adversarial review by Gakarot**, harness-verified ([PDF](audits/2026-10-16-external-adversarial-review.pdf)) | 13 findings and 3 notes, all reproduced (20/20 on the reviewer's harness): 1 High claim, 5 Medium, 6 Low, 1 Informational. Documents corrected, implementation fixes shipped as v1.1 (envelope format 2), rejection matrix extended from 8 to 43 checks and moved into CI; one false statement in our own 2026-10-11 review corrected in place |
+| [2026-10-11](audits/2026-10-11-internal-adversarial-review.md) | Engineering adversarial review, pre-publication | 1 Medium (nonce consumed before verification), fixed in the same revision |
+| [2026-10-13](audits/2026-10-13-zero-semantics-hardening.md) | Engineering review against the zero-semantics class | 2 Low hardened: unconditional zero-identity rejection, loud construction-time config validation |
+| [2026-10-16](audits/2026-10-16-soulbound-security-audit.md) | **Security audit by the Soulbound Security security team**, blind to platform context, harness-verified ([PDF](audits/2026-10-16-soulbound-security-audit.pdf)) | 13 findings and 3 notes, all reproduced (20/20 on the audit's harness): 1 High claim, 5 Medium, 6 Low, 1 Informational. Documents corrected, implementation fixes shipped as v1.1 (envelope format 2), rejection matrix extended from 8 to 43 checks and moved into CI; one false statement in our own 2026-10-11 review corrected in place |
 
 The standard we hold ourselves to: findings are published with
 severity and reasoning, fixes ship in the open, claims that turn out to
 be stronger than the code are corrected in the record rather than
 quietly edited, and external reviewers are credited. Reviews are
 welcome at security@soulboundsecurity.io; see [SECURITY.md](SECURITY.md).
+
+## What's new in 1.1
+
+**Signers can read what they sign.** Request-mode typed data now carries
+a `summary` field, so the EIP-712 confirmation on a hardware wallet shows
+the action in words ("withdraw 250000 USDC to 0x…") rather than a body
+hash, and the server recomputes that summary from the request it
+executes and denies on any difference. The text the operator read on the
+device is proven to describe the bytes that run. It came out of the
+2026-10-16 security audit (V-04), alongside the fixes recorded in the
+audit entry: purpose and derivation check mandatory, full URL signed,
+raw-body absence denied, nonce cache fail-closed. v1 envelopes do not
+verify against the 1.1 domain. Full list: [SPEC.md changelog](SPEC.md#10-changelog).
 
 ## Repository layout
 

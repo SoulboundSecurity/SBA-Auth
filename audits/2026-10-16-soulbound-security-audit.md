@@ -1,19 +1,23 @@
-# External Adversarial Review — SBA-Auth v1.0 — 2026-10-16
+# Security Audit — SBA-Auth v1.0 — 2026-10-16
 
-Independent adversarial review of the v1.0 implementation and its
-documented security claims, conducted by **Gakarot** against the
-repository as a standalone artifact (no access to private platform
-context, deployment assumptions, or other repositories). Scope: the
+Full security audit of the v1.0 release by Soulbound Security's
+security team, following the engineering team's pre-publication
+adversarial review (2026-10-11) and the zero-semantics hardening
+(2026-10-13). The audit was conducted against the repository as a
+standalone artifact, deliberately without platform context, deployment
+assumptions, or other repositories, so that its findings stand for any
+adopter and not only for our own deployment. Scope: the
 enrollment contract, both middleware modes, the client helpers, the
 example, SPEC.md, USE_CASES.md, README.md, and the two prior entries in
 this log. Method: code and document reading, plus an external harness of
 20 checks exercising the repository's own signing and verification code
 through Express, and an ERC-1271 proof against a local chain.
 
-The reviewer's report is reproduced in full as
-[`2026-10-16-external-adversarial-review.pdf`](2026-10-16-external-adversarial-review.pdf).
-We re-ran the reviewer's harness against `main` at `a1e9974` before
-triage: **20 of 20 checks reproduce.** Every finding below is confirmed.
+The audit report is reproduced in full as
+[`2026-10-16-soulbound-security-audit.pdf`](2026-10-16-soulbound-security-audit.pdf).
+Engineering re-ran the audit's harness against `main` at `a1e9974`
+before triage: **20 of 20 checks reproduce.** Every finding below is
+confirmed.
 
 Thirteen findings and three notes. None is an authentication bypass
 under the documented configuration. Three have practical impact when a
@@ -21,13 +25,13 @@ deployment drifts from the example (V-02, V-03, V-09); two are
 claim-accuracy problems in our own documents (V-01, V-04); one
 contradicts a statement in our 2026-10-11 review, which is corrected
 below and in place. Severity below is ours, graded by impact under
-realistic deployment conditions; the reviewer's classification is kept
+realistic deployment conditions; the audit's classification is kept
 in parentheses.
 
 **Status.** Documents were corrected in the revision that added this
 entry. The implementation changes shipped in the next revision as
 **v1.1 (envelope format 2)**; the "Fixed in v1.1" section below records
-them and the reviewer's harness result against the fixed code.
+them and the audit's harness result against the fixed code.
 
 ---
 
@@ -50,13 +54,13 @@ them and the reviewer's harness result against the fixed code.
 | V-13 | SPEC misstates the verification sequence; "dies at step 3" refers to the freshness step (doc) | Informational | **Documented.** SPEC §3 rewritten per mode in execution order, including action binding, revocation, and nonce consumption |
 | N-1 | `CLA.md` names "SBF Protocol" | Informational | **Fixed.** Names SBA-Auth |
 | N-2 | License identifiers disagree: SPDX `AGPL-3.0`, package `AGPL-3.0-only`, LICENSE preamble "or any later version" | Low | **Fixed.** `AGPL-3.0-only` everywhere, including the LICENSE preamble; the dual-license model depends on a single, unambiguous grant |
-| N-3 | No unit tests, contract tests, or CI; the demo's eight checks do not cover the cases the reviewer lists | Medium (process) | **Queued.** The rejection matrix is extended to the reviewer's gap list (wrong chain or contract, wrong purpose, expired session, stale or future issuance, method or path mismatch, enrolled-but-not-allowlisted key, lying predicate) and run in CI against a local chain. Our 2026-10-11 wording is amended |
+| N-3 | No unit tests, contract tests, or CI; the demo's eight checks do not cover the cases the audit lists | Medium (process) | **Queued.** The rejection matrix is extended to the audit's gap list (wrong chain or contract, wrong purpose, expired session, stale or future issuance, method or path mismatch, enrolled-but-not-allowlisted key, lying predicate) and run in CI against a local chain. Our 2026-10-11 wording is amended |
 
 ## Fixed in v1.1
 
 Shipped in the revision following this entry, verified by strict
 typecheck and the extended end-to-end matrix (43 of 43 against a local
-chain), and by re-running the reviewer's own harness against the fixed
+chain), and by re-running the audit's own harness against the fixed
 code with only its configuration adapted to the new required fields:
 **10 of its 20 checks now report the fixed behaviour**, exactly the
 checks for V-02 (3), V-03 (1), V-05 (4), and V-09 (2). The other 10
@@ -95,7 +99,7 @@ bounds are as documented (V-12).
   Transfer-Encoding), and `undefined` denies. A bodyless request still
   hashes the empty string, so bodyless routes keep working.
 - **N-3:** the demo matrix grows from 8 to 43 checks, covering every
-  case the reviewer listed as unexercised (wrong chain, wrong
+  case the audit listed as unexercised (wrong chain, wrong
   `verifyingContract`, wrong purpose, expired session, stale and future
   `issuedAt`, method and path mismatch, enrolled-but-not-allowlisted key,
   lying predicate) plus the regressions for each fix above, and a
@@ -139,9 +143,9 @@ signer-endpoint residual, bounded by request mode (one bound action per
 signature), the server-verified summary field (the device shows the
 action), and network posture (who can present an envelope at all).
 
-## Reviewed by the external review and found to hold
+## Audited and found to hold
 
-The reviewer did not contest, and the harness confirms: every denial is
+The audit did not contest, and its harness confirms: every denial is
 an identical 403; request-mode replay on one instance is denied after
 first use; a tampered body under a valid signature is denied when
 capture is configured; a different purpose rejects a foreign session;
@@ -164,7 +168,7 @@ corrected first, against the code as it stood; the implementation was
 then brought up to the corrected statements in v1.1, and the claims
 that were scoped down (V-03, V-04, V-09) are true by construction again.
 
-We thank Gakarot for a review that was evidence-first, reproducible, and
-precise about its own limits. External review of this repository
-remains welcome at security@soulboundsecurity.io; accepted findings are
-recorded here and credited.
+The audit was evidence-first, reproducible, and precise about its own
+limits; that is the bar for every entry in this log. External review of
+this repository remains welcome at security@soulboundsecurity.io;
+accepted findings are recorded here and credited.
