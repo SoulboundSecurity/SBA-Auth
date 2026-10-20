@@ -59,30 +59,46 @@ anvil &          # local chain
 npm run demo     # deploy, enroll, authenticate, full rejection matrix
 ```
 
-The demo exercises the whole pattern end to end as a 43-check acceptance
+The demo exercises the whole pattern end to end as a 48-check acceptance
 and rejection matrix: domain, chain, and purpose binding; expiry and
 freshness; method, full-URL, body, and summary binding; raw-body
-capture; nonce capacity; a lying registry; construction guards; and
-instant session revocation. The same matrix runs in CI on every push.
+capture; nonce capacity; a lying registry; construction guards;
+environment loading; and instant session revocation. The same matrix
+runs in CI on every push.
+
+The whole authentication configuration of a deployment is five
+environment variables, none of them secret (see
+[`.env.example`](.env.example)). Anyone who reads them learns who is
+authorized and still cannot sign as any of them, so they live in
+change-controlled deployment configuration, not a vault:
+
+```bash
+SBA_CHAIN_ID=42161
+SBA_REGISTRY=0x…                          # this organization's enrollment registry
+SBA_PURPOSE="Treasury Console"            # the audience every signature names; unique per service
+SBA_IDENTITY_SALT=…                       # namespaces identities; matches the registry
+SBA_ALLOWLIST=0x3f1c…,0x9a07…,0x52de…     # enrolled identity values, not secrets
+```
 
 Server integration is one middleware per surface:
 
 ```ts
-import { sbaSessionAuth, sbaRequestAuth, makeViemPredicate, deriveIdentityLocal } from './server/sba-auth.js';
+import { sbaSessionAuth, sbaRequestAuth, makeViemPredicate } from './server/sba-auth.js';
+import { sbaConfigFromEnv } from './server/sba-env.js';
 
+const env = sbaConfigFromEnv();                 // throws on anything missing, zero, or malformed
 const config = {
-  chainId,
-  verifyingContract: REGISTRY_ADDRESS,          // binds every signature to this registry
-  purpose: 'Treasury Console',                  // the audience the signer sees; unique per service
-  predicate: makeViemPredicate(publicClient, REGISTRY_ADDRESS),
-  deriveIdentity: (a) => deriveIdentityLocal(a, 'YOUR_FORK_SALT', chainId),
-  allowlist: ADMIN_IDENTITY_IDS,                // authorization data, not a secret
+  ...env,                                       // chainId, verifyingContract, purpose, deriveIdentity, allowlist
+  predicate: makeViemPredicate(publicClient, env.verifyingContract),
   summaryOf: (req) => `withdraw ${req.body.amount} ${req.body.token} to ${req.body.to}`,
 };
 
-app.get('/admin/stats',  rateLimiter, sbaSessionAuth(config), handler);
-app.post('/admin/action', rateLimiter, sbaRequestAuth(config), handler);
+app.get('/admin/balances', rateLimiter, sbaSessionAuth(config), handler);
+app.post('/admin/withdraw', rateLimiter, sbaRequestAuth(config), handler);
 ```
+
+Onboarding an operator is one enrollment and one new allowlist entry;
+offboarding is deleting the entry and redeploying.
 
 The client signs the same summary string; the signer's device shows it;
 the server recomputes it from the request it executes and denies on any
@@ -135,7 +151,7 @@ what we did about it, and where we were wrong.
 | --- | --- | --- |
 | [2026-10-11](audits/2026-10-11-internal-adversarial-review.md) | Engineering adversarial review, pre-publication | 1 Medium (nonce consumed before verification), fixed in the same revision |
 | [2026-10-13](audits/2026-10-13-zero-semantics-hardening.md) | Engineering review against the zero-semantics class | 2 Low hardened: unconditional zero-identity rejection, loud construction-time config validation |
-| [2026-10-16](audits/2026-10-16-soulbound-security-audit.md) | **Security audit by the Soulbound Security security team**, blind to platform context, harness-verified ([PDF](audits/2026-10-16-soulbound-security-audit.pdf)) | 13 findings and 3 notes, all reproduced (20/20 on the audit's harness): 1 High claim, 5 Medium, 6 Low, 1 Informational. Documents corrected, implementation fixes shipped as v1.1 (envelope format 2), rejection matrix extended from 8 to 43 checks and moved into CI; one false statement in our own 2026-10-11 review corrected in place |
+| [2026-10-16](audits/2026-10-16-soulbound-security-audit.md) | **Security team review**, conducted blind to platform context, harness-verified ([PDF](audits/2026-10-16-soulbound-security-audit.pdf)) | 13 findings and 3 notes, all reproduced (20/20 on the review's harness): 1 High claim, 5 Medium, 6 Low, 1 Informational. Documents corrected, implementation fixes shipped as v1.1 (envelope format 2), rejection matrix extended from 8 to 48 checks and moved into CI; one false statement in our own 2026-10-11 review corrected in place |
 
 The standard we hold ourselves to: findings are published with
 severity and reasoning, fixes ship in the open, claims that turn out to
@@ -151,8 +167,8 @@ the action in words ("withdraw 250000 USDC to 0x…") rather than a body
 hash, and the server recomputes that summary from the request it
 executes and denies on any difference. The text the operator read on the
 device is proven to describe the bytes that run. It came out of the
-2026-10-16 security audit (V-04), alongside the fixes recorded in the
-audit entry: purpose and derivation check mandatory, full URL signed,
+2026-10-16 security team review (V-04), alongside the fixes recorded in
+the review entry: purpose and derivation check mandatory, full URL signed,
 raw-body absence denied, nonce cache fail-closed. v1 envelopes do not
 verify against the 1.1 domain. Full list: [SPEC.md changelog](SPEC.md#10-changelog).
 
@@ -163,7 +179,7 @@ verify against the 1.1 domain. Full list: [SPEC.md changelog](SPEC.md#10-changel
 | `SPEC.md`, `USE_CASES.md` | The pattern and its deployments | AGPL-3.0 (freely readable; ideas aren't licensed) |
 | `contracts/SoulboundAuthToken.sol` | Enrollment registry (open or approval-gated) | AGPL-3.0 |
 | `contracts/interfaces/ISBAIdentity.sol` | Minimal identity predicate surface | **MIT** — integrate against it without license questions |
-| `server/sba-auth.ts`, `client/sba-client.ts` | Verifier middleware and envelope signing | AGPL-3.0 |
+| `server/sba-auth.ts`, `server/sba-env.ts`, `client/sba-client.ts` | Verifier middleware, environment-file configuration, envelope signing | AGPL-3.0 |
 | `example/` | Runnable end-to-end demo against anvil | AGPL-3.0 |
 
 ## Licensing

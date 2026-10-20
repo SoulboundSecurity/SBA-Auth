@@ -258,14 +258,17 @@ salt, platform records cannot be joined to chain identities.
   predicate, mandatory local derivation check, server-verified request
   summary, fail-closed timeouts and raw-body handling, session
   revocation, single-use request nonces.
+- `server/sba-env.ts` — environment-file configuration: the five
+  non-secret deployment values (chain, registry, purpose, identity salt,
+  allowlist) read and validated loudly at startup; see `.env.example`.
 - `client/sba-client.ts` — envelope construction and signing for any viem
   wallet client.
 - `example/` — a runnable end-to-end demonstration against a local anvil
-  node: deploy, enroll, authorize, and a 43-check acceptance and
+  node: deploy, enroll, authorize, and a 48-check acceptance and
   rejection matrix covering every claim in this document (domain, chain,
   purpose, expiry, freshness, method, full URL, body, summary, raw-body
   capture, nonce capacity, lying registry, construction guards,
-  revocation). `npm run demo`; also run in CI on every push.
+  environment loading, revocation). `npm run demo`; also run in CI on every push.
 
 **Provenance.** The SBA concept was first specified under MIT (tag
 `v0-concept`) and first deployed by Soulbound Finance, on its own
@@ -309,15 +312,17 @@ to 0x…") instead of a body hash, and the server recomputes the summary
 from the request it executes and denies on any difference. What the
 signer reads is proven to be what runs (section 4, including the design
 rules and the device-rendering limit). Also in 1.1, from the 2026-10-16
-security audit: `purpose` is required with no default and is the
+security team review: `purpose` is required with no default and is the
 audience the signer sees; `deriveIdentity` is required, so registry
 equivocation is defeated by construction; the full original URL is
 signed, query string and mount prefix included; a request carrying a
 body without raw-body capture is denied; nonce cache capacity is
-validated and fail-closed; the gauntlet is documented per mode in
-execution order; timestamp bounds are stated as implemented; roster,
+validated and fail-closed; the deployment's five non-secret values are
+read from the environment and validated at startup (`sbaConfigFromEnv`,
+`.env.example`); the gauntlet is documented per mode in execution
+order; timestamp bounds are stated as implemented; roster,
 audit-trail, and dual-control claims are scoped to what the code does.
-Demo matrix 8 to 43 checks, run in CI. v1 envelopes do not verify
+Demo matrix 8 to 48 checks, run in CI. v1 envelopes do not verify
 against the format-2 domain.
 
 **1.0 (2026-10-11).** First release: enrollment/authentication split,

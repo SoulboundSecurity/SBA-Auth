@@ -28,6 +28,7 @@ import {
   SBA_SESSION_TYPES,
   SBA_REQUEST_TYPES,
 } from '../server/sba-auth.js';
+import { sbaConfigFromEnv } from '../server/sba-env.js';
 
 const RPC_URL = process.env.RPC_URL ?? 'http://127.0.0.1:8545';
 // anvil default accounts 0 (admin, allowlisted), 1 (stranger, enrolled but
@@ -248,6 +249,14 @@ async function main() {
   check('construct: zero verifyingContract throws (zero-semantics)', throws(() => sbaSessionAuth({ ...good, verifyingContract: '0x0000000000000000000000000000000000000000' })));
   check('construct: zero identity in allowlist throws (zero-semantics)', throws(() => sbaSessionAuth({ ...good, allowlist: [zeroHash] })));
   check('construct: a well-formed config constructs', !throws(() => sbaSessionAuth(good)) && !throws(() => sbaRequestAuth(good)));
+
+  // ═══ Environment-file configuration (server/sba-env.ts) ═════════════
+  const goodEnv = { SBA_CHAIN_ID: String(chainId), SBA_REGISTRY: registry, SBA_PURPOSE: EXAMPLE_PURPOSE, SBA_IDENTITY_SALT: 'SBA_SALT_V1', SBA_ALLOWLIST: identityId };
+  check('env: a complete environment loads and derives the admin identity', sbaConfigFromEnv(goodEnv).deriveIdentity(admin.address).toLowerCase() === identityId.toLowerCase());
+  check('env: missing SBA_PURPOSE throws', throws(() => sbaConfigFromEnv({ ...goodEnv, SBA_PURPOSE: undefined })));
+  check('env: malformed SBA_CHAIN_ID throws', throws(() => sbaConfigFromEnv({ ...goodEnv, SBA_CHAIN_ID: 'mainnet' })));
+  check('env: zero SBA_REGISTRY throws', throws(() => sbaConfigFromEnv({ ...goodEnv, SBA_REGISTRY: '0x0000000000000000000000000000000000000000' })));
+  check('env: zero identity in SBA_ALLOWLIST throws', throws(() => sbaConfigFromEnv({ ...goodEnv, SBA_ALLOWLIST: `${identityId},${zeroHash}` })));
 
   // ═══ Session revocation ═════════════════════════════════════════════
   sessionAuth.revoke(session.nonce);

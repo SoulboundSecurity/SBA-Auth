@@ -8,19 +8,19 @@ pre-publication adversarial review by engineering
 ([2026-10-11](audits/2026-10-11-internal-adversarial-review.md)), a
 follow-up hardening against the zero-semantics vulnerability class
 ([2026-10-13](audits/2026-10-13-zero-semantics-hardening.md)), and a
-full security audit by the Soulbound Security security team, conducted
-blind to platform context
+security team review, conducted blind to platform context
 ([2026-10-16](audits/2026-10-16-soulbound-security-audit.md),
 [report PDF](audits/2026-10-16-soulbound-security-audit.pdf)) whose
-13 findings were all reproduced on the audit's harness and are
-dispositioned there. External audits are welcome and will be recorded
+13 findings were all reproduced on the review's harness and are
+dispositioned there. External reviews are welcome and will be recorded
 in the same log.
 
 ## How we review
 
 - Two stages: engineering reviews adversarially before publication;
-  the security team audits after it, without platform context, so its
-  findings hold for any adopter of this code.
+  the security team reviews after it, blind to platform context, so its
+  findings hold for any adopter of this code. That second stage is the
+  "security team review" wherever this repository uses the term.
 - Every finding is recorded with a severity and the reasoning behind
   it, including the ones we decline, and including the ones that show
   our own earlier statements were wrong. Corrections are made in place

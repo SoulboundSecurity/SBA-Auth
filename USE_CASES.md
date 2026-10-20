@@ -157,7 +157,7 @@ everything else: this pattern deliberately does not replace workforce SSO.
 | --- | --- | --- |
 | Enrollment policy | Open mint + allowlist, or approval-co-signed mint | Open is honest when the allowlist is the real gate (small teams). Approval-gated when enrollment itself must encode process (KYC, HR, dual sign-off) |
 | Mode per surface | Session / request | Reads: session. Anything that moves value, changes limits, or alters authorization: request mode, no exceptions |
-| Allowlist custody | Deployment config | Treat as authorization data, not secret; changes should require deployment-level access and leave a change trail |
+| Allowlist custody | Environment file (`SBA_ALLOWLIST`), loaded at startup | Authorization data, not secret; changes require deployment-level access and leave a change trail. Onboarding is one enrollment and one entry; offboarding is deleting the entry and redeploying |
 | Signer custody | Hardware wallet per operator, dedicated to this role | The signer key is the only secret in the system; give it the custody that fact deserves. Confirm the device renders EIP-712 fields for your typed data (Ledger needs a registered clear-signing descriptor), or the request summary is bound but not shown |
 | Summary function | One shared `summaryOf`, pure over the signed body | Decode the body once into a typed action; render the summary and execute from the same object. Include direction, amount, asset, counterparty. See SPEC 4 |
 | Network posture | IP-fenced front end for high-value deployments | Defense in depth; bounds unauthenticated probing without touching the auth path |

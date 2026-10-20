@@ -14,9 +14,9 @@ import {
   sbaSessionAuth,
   sbaRequestAuth,
   makeViemPredicate,
-  deriveIdentityLocal,
   type SbaConfig,
 } from '../server/sba-auth.js';
+import { sbaConfigFromEnv } from '../server/sba-env.js';
 
 export const EXAMPLE_PURPOSE = 'SBA Example Console';
 
@@ -43,13 +43,18 @@ export function createApp(options: ExampleServerOptions) {
   const client = createPublicClient({ transport: http(options.rpcUrl) });
   const salt = options.salt ?? 'SBA_SALT_V1';
 
+  // The five non-secret deployment values travel as an environment
+  // record, exactly as a real deployment reads them from its env file.
+  const env = sbaConfigFromEnv({
+    SBA_CHAIN_ID: String(options.chainId),
+    SBA_REGISTRY: options.registry,
+    SBA_PURPOSE: EXAMPLE_PURPOSE,
+    SBA_IDENTITY_SALT: salt,
+    SBA_ALLOWLIST: options.allowlist.join(','),
+  });
   const config: SbaConfig = {
-    chainId: options.chainId,
-    verifyingContract: options.registry,
-    purpose: EXAMPLE_PURPOSE,
-    predicate: makeViemPredicate(client, options.registry),
-    deriveIdentity: (address) => deriveIdentityLocal(address, salt, options.chainId),
-    allowlist: options.allowlist,
+    ...env,
+    predicate: makeViemPredicate(client, env.verifyingContract),
     summaryOf: (req) => summarize(req.body),
     nonceCacheMax: options.nonceCacheMax,
   };
