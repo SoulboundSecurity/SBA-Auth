@@ -192,7 +192,7 @@ SBA-Auth follows the Soulbound Security licensing model:
   expose or consume the predicate surface freely.
 - **The implementation is AGPL-3.0.** Deploy it openly and share your
   modifications, or license it commercially for proprietary embedding:
-  **legal@soulboundsecurity.io**. Commercial engagements include
+  **sales@soulboundsecurity.io**. Commercial engagements include
   deployment support — enrollment ceremony design, signer custody, and
   allowlist operations are where the real work lives.
 
@@ -212,6 +212,7 @@ the SBA-Auth pattern") and name your deployment yourself.
   [Role and Trust Model](https://github.com/SoulboundSecurity/sbf-protocol/blob/master/docs/PROTOCOL_SPEC.md#7-role-and-trust-model)
   is the role-administration pattern these contracts follow, and its
   identity layer is the production-grade ancestor of this registry.
+- Product release: [SBA-Auth: Four Factors, One Key](https://blog.soulbound.finance/p/sba-auth-four-factors-one-key)
 - Research: [blog.soulbound.finance](https://blog.soulbound.finance)
 
 **Security contact:** security@soulboundsecurity.io ·
